@@ -20,6 +20,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 from pathlib import Path
 import shutil
+import sqlite3
 import time
 import os
 from typing import List, Dict
@@ -32,11 +33,15 @@ load_dotenv()
 try:
     SONARR_URL = os.environ["SONARR_URL"]
     SONARR_API_KEY = os.environ["SONARR_API_KEY"]
-    SONARR_TAG_NAME = os.environ.get("SONARR_TAG_NAME", "transcode")
+    SONARR_TAG_NAME = os.environ.get("SONARR_TAG_NAME", "")
 
     BASE_DIR = Path(os.environ["BASE_DIR"]).resolve()
     TDARR_INPUT_DIR = Path(os.environ["TDARR_INPUT_DIR"]).resolve()
     TDARR_OUTPUT_DIR = Path(os.environ["TDARR_OUTPUT_DIR"]).resolve()
+
+    # New vars for path translation
+    SONARR_BASE_PATH = Path(os.environ.get("SONARR_BASE_PATH", "/tv"))
+    LOCAL_MOUNT_BASE_PATH = Path(os.environ.get("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos"))
 
     MAKE_BACKUP_BEFORE_OVERWRITE = os.environ.get("MAKE_BACKUP_BEFORE_OVERWRITE", "True").lower() in ("true", "1", "yes")
     BACKUP_SUFFIX = os.environ.get("BACKUP_SUFFIX", ".orig")
@@ -150,6 +155,26 @@ def build_relative_path(full_path: str, base_dir: Path) -> Path:
         report_error_and_exit(f"Failed to build relative path for {full_path} relative to {base_dir}", e)
 
 
+def translate_path(sonarr_path: str) -> Path:
+    """
+    Translate Sonarr file path (SONARR_BASE_PATH) to local mounted base path (LOCAL_MOUNT_BASE_PATH).
+    If the path doesn't start with SONARR_BASE_PATH, returns it as Path unchanged.
+    """
+    p = Path(sonarr_path)
+    try:
+        if p.is_absolute() and p.parts[:len(SONARR_BASE_PATH.parts)] == SONARR_BASE_PATH.parts:
+            # Replace SONARR_BASE_PATH prefix with LOCAL_MOUNT_BASE_PATH
+            relative = p.relative_to(SONARR_BASE_PATH)
+            local_path = LOCAL_MOUNT_BASE_PATH.joinpath(relative)
+            return local_path
+        else:
+            # Path does not start with SONARR_BASE_PATH, return as-is
+            return p
+    except Exception as e:
+        logger.warning(f"Failed to translate path '{sonarr_path}': {e}")
+        return p
+
+
 def safe_copy_to_tdarr(src: Path, dest_root: Path, base_dir: Path, dry_run=False) -> Path:
     rel = build_relative_path(str(src), base_dir)
     dest = dest_root.joinpath(rel)
@@ -163,16 +188,40 @@ def safe_copy_to_tdarr(src: Path, dest_root: Path, base_dir: Path, dry_run=False
     shutil.copy2(str(src), str(dest))
     return dest
 
+STATE_DB_FILE = Path(os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db"))
+
+def init_db():
+    conn = sqlite3.connect(STATE_DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS processed_files (
+            file_path TEXT PRIMARY KEY,
+            processed_at INTEGER
+        )
+    """)
+    conn.commit()
+    return conn
+
+def is_processed(conn, file_path: str) -> bool:
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM processed_files WHERE file_path = ?", (file_path,))
+    return c.fetchone() is not None
+
+def mark_processed(conn, file_path: str):
+    c = conn.cursor()
+    now = int(time.time())
+    c.execute("INSERT OR REPLACE INTO processed_files (file_path, processed_at) VALUES (?, ?)", (file_path, now))
+    conn.commit()
 
 def process_sonarr_to_tdarr(dry_run=False):
-    # 1) find tag id
+    conn = init_db()  # Initialize DB connection
     tag_id = find_tag_id(SONARR_TAG_NAME)
-    # 2) find series with that tag
     series_list = get_series_with_tag(tag_id)
     if not series_list:
         logger.info("No series found with tag '%s' (id=%s). Nothing to copy.", SONARR_TAG_NAME, tag_id)
+        conn.close()
         return
-    # 3) for each series, get episode files and copy them
+
     for s in series_list:
         series_id = s.get("id")
         series_title = s.get("title")
@@ -183,15 +232,25 @@ def process_sonarr_to_tdarr(dry_run=False):
             if not path:
                 logger.warning("Skipping episodeFile without path: %s", ef)
                 continue
-            src = Path(path)
+
+            src = translate_path(path)
+
             if not src.exists():
                 logger.warning("Skips non-existent file: %s", src)
                 continue
+
+            src_str = str(src.resolve())
+            if is_processed(conn, src_str):
+                logger.info("Skipping already processed file: %s", src_str)
+                continue
+
             try:
                 safe_copy_to_tdarr(src=src, dest_root=TDARR_INPUT_DIR, base_dir=BASE_DIR, dry_run=dry_run)
+                mark_processed(conn, src_str)
             except Exception as e:
                 report_error_and_exit(f"Failed to copy {src} to tdarr input", e)
 
+    conn.close()
 
 def move_tdarr_output_back(dry_run=False):
     if not TDARR_OUTPUT_DIR.exists():
