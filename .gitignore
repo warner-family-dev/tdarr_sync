@@ -1,7 +1,7 @@
 # Ignore credentials and environment files
 .smbcredentials
 .env
-.db
+*.db
 
 # macOS system files
 .DS_Store
