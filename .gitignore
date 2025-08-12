@@ -1,0 +1,6 @@
+# Ignore credentials and environment files
+.smbcredentials
+.env
+
+# macOS system files
+.DS_Store
