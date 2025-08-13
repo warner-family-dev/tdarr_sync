@@ -137,3 +137,55 @@ journalctl -u tdarr-sync.service -f
 
 ---
 ## How backups are named & cleaned
+- On restore, if destination exists:
+    - The original is renamed to `<name><BACKUP_SUFFIX>` (e.g., `Episode.mkv.orig`).
+    - If that exists, a unique variant is created: `<name>.<epoch><BACKUP_SUFFIX>` to keep `BACKUP_SUFFIX` at the end (so the sweeper recognizes it).
+- If `MOVE_ORIGINAL_FILES=True`, the renamed backup is moved to:
+````
+MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
+````
+And it is touched to “now” so `DELETE_ORIGINAL_FILES_DAYS` starts counting from archive time.
+- The sweeper removes files in the archive tree that end with `BACKUP_SUFFIX` and are older than `DELETE_ORIGINAL_FILES_DAYS` (or immediately if set to 0).
+
+---
+## Common pitfalls & troubleshooting
+### - “.db is tracked by Git”:
+`.gitignore` only affects untracked files. If your DB was committed earlier:
+````bash
+git rm --cached sonarr_tdarr_state.db
+echo "sonarr_tdarr_state.db" >> .gitignore
+git commit -m "chore(gitignore): untrack local state DB"
+````
+### - Wrong path mapping:
+If the script can’t find source files, verify that `SONARR_BASE_PATH` actually matches your Sonarr paths and that `LOCAL_MOUNT_BASE_PATH` points to the correct local mount.
+### - Permissions:
+Ensure the script’s user can read `BASE_DIR` and write into `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, and (if used) `MOVE_ORIGINAL_FILES_DEST`.
+### - Tdarr outputs never restore:
+Confirm Tdarr is writing to `TDARR_OUTPUT_DIR` using the same relative structure. Drop a test file mirroring a real relative path to validate the restore step.
+### - Backups not deleting:
+The sweeper acts only in MOVE_ORIGINAL_FILES_DEST and only on files ending with BACKUP_SUFFIX. Ensure those two conditions are met.
+
+----
+## Development
+Conventional commits are encouraged `(e.g., feat(sync): archive originals only after restore)`.
+Changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+### Quick Dev Loop
+````bash
+# Dry run
+python3 tdarr_sync.py --dry-run
+
+# Simulate restore
+mkdir -p "$TDARR_OUTPUT_DIR/Show/Season 01"
+cp /path/to/sample.mkv "$TDARR_OUTPUT_DIR/Show/Season 01/Episode.mkv"
+python3 tdarr_sync.py
+````
+----
+## Security Notes
+- Never commit your .env file. Use .gitignore.
+- Consider using read-only Sonarr API keys scoped to your instance.
+
+## Roadmap / Ideas
+- Optional SQLite tracking of archived files for richer retention/reporting.
+- Parallelism for large copy sets (with rate limits).
+- Health endpoint or metrics export.
