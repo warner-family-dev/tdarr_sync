@@ -55,9 +55,9 @@ pip install requests python-dotenv
 
 - An example .env is included, and should be used to store all sensitive information.
 ### Notes
-- Tag filter: Only series with SONARR_TAG_NAME are processed. Leave empty to process all series.
+- Tag filter: Only series with `SONARR_TAG_NAME` are processed. Leave empty to process all series.
 - Path translation: Files Sonarr reports under `SONARR_BASE_PATH` are mapped to your actual mount at `LOCAL_MOUNT_BASE_PATH`.
-- Example: /tv/TV/Show/Season 01/Episode.mkv → /mnt/video/TV/Show/Season 01/Episode.mkv.
+    - Example: /tv/TV/Show/Season 01/Episode.mkv → /mnt/video/TV/Show/Season 01/Episode.mkv.
 - Archive on restore: Originals are archived only when a transcoded file is being restored over them.
 - Retention: The sweeper deletes archived originals only inside `MOVE_ORIGINAL_FILES_DEST` that end with `BACKUP_SUFFIX`. Newly archived files are “touched” to now so they aren’t deleted immediately.
 - If `MOVE_ORIGINAL_FILES=False`, backups remain alongside the originals (still suffixed). The sweeper does not act on in-place backups — only on files within MOVE_ORIGINAL_FILES_DEST.
@@ -98,6 +98,8 @@ Typical cadence:
 2) Restore phase runs in the same job: whenever a completed file is found in `TDARR_OUTPUT_DIR`, it is restored.
 
 3) After restore, the sweeper runs to enforce retention on the archive tree.
+
+If running larger datasets or a first time run against multiple tagged series, recommended to run in `Tmux` or `Screen` if accessing remote hosts.
 
 ---
 
@@ -148,7 +150,7 @@ And it is touched to “now” so `DELETE_ORIGINAL_FILES_DAYS` starts counting f
 - The sweeper removes files in the archive tree that end with `BACKUP_SUFFIX` and are older than `DELETE_ORIGINAL_FILES_DAYS` (or immediately if set to 0).
 
 ---
-## Common pitfalls & troubleshooting
+## Common Pitfalls & Troubleshooting
 ### - “.db is tracked by Git”:
 `.gitignore` only affects untracked files. If your DB was committed earlier:
 ````bash
