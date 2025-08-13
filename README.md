@@ -54,11 +54,86 @@ pip install requests python-dotenv
 ## .env File
 
 - An example .env is included, and should be used to store all sensitive information.
-# Notes
+### Notes
 - Tag filter: Only series with SONARR_TAG_NAME are processed. Leave empty to process all series.
-- Path translation: Files Sonarr reports under SONARR_BASE_PATH are mapped to your actual mount at LOCAL_MOUNT_BASE_PATH.
+- Path translation: Files Sonarr reports under `SONARR_BASE_PATH` are mapped to your actual mount at `LOCAL_MOUNT_BASE_PATH`.
 - Example: /tv/TV/Show/Season 01/Episode.mkv → /mnt/video/TV/Show/Season 01/Episode.mkv.
 - Archive on restore: Originals are archived only when a transcoded file is being restored over them.
-- Retention: The sweeper deletes archived originals only inside MOVE_ORIGINAL_FILES_DEST that end with BACKUP_SUFFIX. Newly archived files are “touched” to now so they aren’t deleted immediately.
-- If MOVE_ORIGINAL_FILES=False, backups remain alongside the originals (still suffixed). The sweeper does not act on in-place backups — only on files within MOVE_ORIGINAL_FILES_DEST.
+- Retention: The sweeper deletes archived originals only inside `MOVE_ORIGINAL_FILES_DEST` that end with `BACKUP_SUFFIX`. Newly archived files are “touched” to now so they aren’t deleted immediately.
+- If `MOVE_ORIGINAL_FILES=False`, backups remain alongside the originals (still suffixed). The sweeper does not act on in-place backups — only on files within MOVE_ORIGINAL_FILES_DEST.
 
+---
+
+## Database
+
+The script uses a small SQLite DB (default sonarr_tdarr_state.db) to remember which source files have already been copied to Tdarr input.
+
+- To create the DB structure explicitly, run the included helper:
+
+````bash
+python3 create_db.py
+````
+> Tip: If you ever want to reprocess files from the copy phase, you can delete the DB or remove specific rows. (Do not edit while the script runs.)
+
+---
+
+## Usage
+
+Run once (foreground):
+````bash
+python3 tdarr_sync.py
+````
+Dry run (no writes; logs actions):
+````bash
+python3 tdarr_sync.py --dry-run
+````
+Copy only (skip restore of Tdarr outputs for this run):
+````bash
+python3 tdarr_sync.py --skip-restore
+````
+Typical cadence:
+
+1) Copy phase runs every hour (or more frequently).
+
+2) Restore phase runs in the same job: whenever a completed file is found in `TDARR_OUTPUT_DIR`, it is restored.
+
+3) After restore, the sweeper runs to enforce retention on the archive tree.
+
+---
+
+## Scheduling
+### cron (Linux)
+Example: run every 30 minutes with logs handled by the script:
+````bash
+*/30 * * * * cd /path/to/tdarr_sync && /path/to/.venv/bin/python3 tdarr_sync.py >> /var/log/cron-tdarr_sync.log 2>&1
+````
+### systemd (Linux)
+`/etc/systemd/system/tdarr-sync.service`:
+````
+[Unit]
+Description=Tdarr Sync (Sonarr ➜ Tdarr ➜ Library)
+After=network-online.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/path/to/tdarr_sync
+ExecStart=/path/to/.venv/bin/python3 tdarr_sync.py
+Restart=on-failure
+User=media
+Group=media
+
+[Install]
+WantedBy=multi-user.target
+````
+````bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now tdarr-sync.service
+journalctl -u tdarr-sync.service -f
+````
+----
+## Logging & Alerts
+- Rotating log at `LOG_FILE` (default max 10 MB x `LOG_BACKUP_COUNT`).
+- Telegram errors: set `TELEGRAM_BOT_TOKEN` (or `TELEGRAM_TOKEN`) and `TELEGRAM_CHAT_ID`.
+
+---
+## How backups are named & cleaned
