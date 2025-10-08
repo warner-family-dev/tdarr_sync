@@ -23,7 +23,7 @@ The project now ships as a dockerised stack with a REST API and dashboard (mirro
 | Service | Image | Port | Responsibility |
 | --- | --- | --- | --- |
 | `worker` | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` on the interval specified in `.env`, handles copy/restore/retention, and writes logs/DB state. |
-| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code volume/logs/data as the worker. |
+| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code/data/log mounts and media volumes as the worker so manual runs can access the library. |
 | `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API and mirrors the ergonomics of the `whiskey_db` UI. |
 
 Shared volumes:
