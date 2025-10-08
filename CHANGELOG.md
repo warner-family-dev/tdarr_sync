@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - Next.js build passes after moving the server action to its own module and tightening SyncStatus types for auto-refresh.
 - Web-triggered runs no longer fail due to missing TTYs; interactive prompts are skipped when none is available.
 
+---
+
 ## [2.0.0] - 2025-10-08
 ### Added
 - Docker-first deployment with `docker-compose.yml`, shared volumes, and `.env.example`.
@@ -26,6 +28,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - README restructured around the new containerised architecture while retaining legacy CLI guidance.
 - Consolidated service logging into a single shared `tdarr_sync.log` with service-prefixed entries.
+
+---
 
 ## [1.1.0] - 2025-08-12
 ### Changed
