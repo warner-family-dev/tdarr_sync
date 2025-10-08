@@ -1,117 +1,187 @@
 # Tdarr Sync (Sonarr ➜ Tdarr ➜ Library)
 
-Sync media from a Sonarr library to Tdarr for transcoding, then restore the transcoded files back to their original locations — safely.
-
-- **Copy phase:** Files from Sonarr series with a specific tag (e.g., `transcode`) are copied into `TDARR_INPUT_DIR` (preserving relative paths). **No originals are renamed/moved here.**
-- **Restore phase:** When Tdarr outputs a transcoded file into `TDARR_OUTPUT_DIR`, it’s moved back into the library (`BASE_DIR`). If an original exists at the destination, it is first **archived** (renamed with `BACKUP_SUFFIX` and optionally moved to an archive folder), then the transcoded file replaces it.
-- **Retention:** If archival to a separate folder is enabled, archived files are **“touched” to now** so deletion (by age) uses the time they were archived, not the media’s original timestamp.
+Sync media from a Sonarr library to Tdarr for transcoding, then restore the transcoded files back to their original locations — safely.  
+The project now ships as a dockerised stack with a REST API and dashboard (mirroring the ergonomics of `whiskey_db`) so you can deploy, monitor, and trigger runs without SSHing into the host.
 
 > Repo: <https://github.com/keatre/tdarr_sync>
 
 ---
 
-## Why this tool?
+## Highlights
 
-- Keep Sonarr free to download whatever it finds.
-- Let Tdarr normalize everything to a consistent codec/resolution.
-- **Safety first:** original files are only archived **after** a transcoded replacement is restored.
-- **Retention that makes sense:** newly archived originals won’t be deleted immediately just because their content is old.
-
----
-
-## Features
-
-- Filters Sonarr series by a specified tag (e.g., `transcode`).
-- Copies matched episode files into `TDARR_INPUT_DIR` mirroring the library structure.
-- Restores completed transcodes from `TDARR_OUTPUT_DIR` back into `BASE_DIR`.
-- Archives originals **only after successful restore**:
-  - Renames to `<filename><BACKUP_SUFFIX>` (e.g., `Episode.mkv.orig`).
-  - If configured, moves the renamed file under `MOVE_ORIGINAL_FILES_DEST` using the same relative path as in `BASE_DIR`.
-  - **Touches** the archived file’s mtime to “now” so retention is measured from archive time.
-- Periodic sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (if enabled).
-- Tracks “already processed” sources in a lightweight SQLite DB so you don’t copy the same item repeatedly.
-- Optional Telegram notifications on errors.
+- **Copy phase:** Files from Sonarr series with a specific tag (e.g. `transcode`) are copied into `TDARR_INPUT_DIR` (preserving relative paths). Originals are untouched.
+- **Restore phase:** When Tdarr outputs a transcoded file into `TDARR_OUTPUT_DIR`, the worker moves it back into `BASE_DIR`, archiving any original with the configured suffix/location first.
+- **Retention-aware archives:** Archived originals are “touched” to now so retention windows respect when they were replaced, not the media’s production date.
+- **Container-first:** `docker-compose.yml` starts three services — worker, API, and dashboard — each configurable via `.env`.
+- **Observability:** REST endpoints expose sync state and processed history; the Next.js dashboard surfaces metrics, recent activity, and a one-click manual trigger.
+- **Notification hooks:** Optional Telegram alerts for failures, plus rotating log files kept under `/logs`.
 
 ---
 
-## Requirements
+## Architecture Overview
 
-- Python **3.8+**
-- Packages:
-  - `requests`
-  - `python-dotenv`
-- A working Sonarr v3 instance and a Tdarr flow that writes completed outputs to a known directory.
+| Service | Image | Port | Responsibility |
+| --- | --- | --- | --- |
+| `worker` | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` on the interval specified in `.env`, handles copy/restore/retention, and writes logs/DB state. |
+| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code volume/logs/data as the worker. |
+| `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API and mirrors the ergonomics of the `whiskey_db` UI. |
 
-Install Python deps:
+Shared volumes:
+
+- `${TDARR_SYNC_DATA_DIR}` → mounted at `/data` (stores `sonarr_tdarr_state.db`)
+- `${TDARR_SYNC_LOG_DIR}` → mounted at `/logs` (rotating logs for worker/API)
+- Media mounts provided via `HOST_LIBRARY_MOUNT`, `HOST_TDARR_INPUT`, `HOST_TDARR_OUTPUT`, and optional `HOST_ARCHIVE_DIR`
+
+---
+
+## Quick Start (Docker Compose)
+
+1. Copy the sample environment file and adjust it for your host paths and timezone:
+   ```bash
+   cp .env.example .env
+   ```
+2. Edit `.env`:
+   - Set `TZ` to your preferred timezone (e.g. `America/Chicago`).
+   - Point the `HOST_*` variables at real host directories that contain your Sonarr library and Tdarr input/output/archives.
+   - Fill in Sonarr credentials (`SONARR_URL`, `SONARR_API_KEY`, optional `SONARR_TAG_NAME`).
+   - If you mount an archive folder, ensure it exists and is writable.
+3. Bring the stack up:
+   ```bash
+   docker compose up -d --build
+   ```
+4. Visit the dashboard at `http://localhost:${WEB_PORT}` (defaults to `3000`).  
+   API docs/health are available at `http://localhost:${API_PORT}/health` (defaults to `8000`).
+5. Check logs when needed:
+   ```bash
+   docker compose logs -f worker
+   docker compose logs -f api
+   ```
+
+The worker launches an initial sync (respecting `SYNC_DRY_RUN`) and then loops every `SYNC_INTERVAL_SECONDS`. Use the dashboard’s “Trigger Sync” button for an on-demand run or hit `POST /sync/run` directly.
+
+---
+
+## Configuration
+
+Everything runs from `.env` — the file is not checked into Git (see `.env.example` for defaults).
+
+### Host mounts
+
+| Variable | Description |
+| --- | --- |
+| `HOST_LIBRARY_MOUNT` | Read-only mount of your Sonarr-managed library (source files). |
+| `HOST_TDARR_INPUT` | Writable mount where Tdarr watches for incoming jobs. |
+| `HOST_TDARR_OUTPUT` | Writable mount where Tdarr drops transcoded outputs. |
+| `HOST_ARCHIVE_DIR` | (Optional) Writable mount used when `MOVE_ORIGINAL_FILES=true`. |
+| `TDARR_SYNC_DATA_DIR` | Where the SQLite DB is stored on the host (defaults to `./data`). |
+| `TDARR_SYNC_LOG_DIR` | Where logs are stored on the host (defaults to `./logs`). |
+
+### Core service variables
+
+- `TZ` — propagated to all containers; controls timestamps and log formatting.
+- `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
+- `LOG_FILE`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` — worker logging config.
+- `API_LOG_FILE` — API log path (set empty to log to stdout only).
+- `NEXT_PUBLIC_API_BASE_URL` — URL the web client uses to talk to the API (`http://api:8000` in docker).
+- Sonarr/Tdarr paths mirror the original script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, etc.).
+
+### Worker cadence and behaviour
+
+- `SYNC_INTERVAL_SECONDS` — interval between runs (set `0` or negative to run once and exit).
+- `SYNC_ON_START` — run immediately on container boot (`true`/`false`).
+- `SYNC_DRY_RUN` — pass `--dry-run` to the script so the loop never mutates files.
+- `SYNC_ERROR_BACKOFF_SECONDS` — additional sleep time after a failed sync.
+
+### Optional integrations
+
+- Telegram: set `TELEGRAM_BOT_TOKEN` (or `TELEGRAM_TOKEN`) and `TELEGRAM_CHAT_ID`.
+- `PUID`/`PGID`: passed to all services via Compose to match host permissions.
+
+---
+
+## Web Dashboard (`web/`)
+
+- Built with Next.js 14 + React 18.
+- Mirrors the look-and-feel of `whiskey_db`: dark theme, responsive layout, quick stats panel.
+- Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
+- Provides a manual trigger form (optionally as a dry run) — implemented via Next server actions that call the API.
+- Reads configuration from `NEXT_PUBLIC_API_BASE_URL`. In Docker this points at the internal `api` service; if running locally you can set it to `http://localhost:8000`.
+
+---
+
+## REST API (`api/`)
+
+All endpoints return JSON.
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/health` | GET | Liveness probe. |
+| `/config` | GET | Sanitised snapshot of active configuration (no secrets exposed). |
+| `/processed-files?limit=50&offset=0` | GET | Recent processed files ordered by newest first. |
+| `/metrics/summary` | GET | Aggregate counts and database metadata. |
+| `/sync/status` | GET | Current/manual sync status (running flag, timestamps, last exit code). |
+| `/sync/run?dry_run=true` | POST | Trigger an immediate sync (optionally dry run). Returns `409` if a run is already in-flight. |
+
+The API shares the same `/data` and `/logs` volumes as the worker so you can inspect state via HTTP without accessing the host filesystem.
+
+---
+
+## Worker Behaviour
+
+Under the hood the worker still drives `tdarr_sync.py`, so all original guarantees remain:
+
+- **Copy phase:** finds Sonarr series tagged with `SONARR_TAG_NAME`, mirrors their media into `TDARR_INPUT_DIR`, and never renames sources while copying.
+- **Restore phase:** watches `TDARR_OUTPUT_DIR`, archives the original to `<filename><BACKUP_SUFFIX>` (optionally moving to `MOVE_ORIGINAL_FILES_DEST`), then replaces it with the transcoded output.
+- **Retention:** after each restore the sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (when enabled) and only inside the archive tree.
+- **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
+- **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
+
+---
+
+## Database & Logging
+
+- Database file: `${TDARR_SYNC_DATA_DIR}/sonarr_tdarr_state.db` (or whatever you set `STATE_DB_FILE` to). Use the bundled `create_db.py` if you want to pre-create the schema.
+- Both API and worker leverage rotating log handlers. With defaults you’ll find:
+  - Worker: `/logs/tdarr_sync.log`
+  - API: `/logs/api.log`
+- Bind-mount these directories into your backup strategy if you rely on historical logs.
+
+---
+
+## Manual CLI Usage (Optional)
+
+If you prefer running the script without Docker, the legacy workflow still lives in `tdarr_sync.py`.
+
+### Requirements
+
+- Python 3.8+
+- `pip install requests python-dotenv`
+- Copy `.env.example` → `.env` and configure it exactly as you would for Docker (the environment variables are shared).
+
+### Commands
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install requests python-dotenv
-```
----
-
-## .env File
-
-- An example .env is included, and should be used to store all sensitive information.
-### Notes
-- Tag filter: Only series with `SONARR_TAG_NAME` are processed. Leave empty to process all series.
-- Path translation: Files Sonarr reports under `SONARR_BASE_PATH` are mapped to your actual mount at `LOCAL_MOUNT_BASE_PATH`.
-    - Example: /tv/TV/Show/Season 01/Episode.mkv → /mnt/video/TV/Show/Season 01/Episode.mkv.
-- Archive on restore: Originals are archived only when a transcoded file is being restored over them.
-- Retention: The sweeper deletes archived originals only inside `MOVE_ORIGINAL_FILES_DEST` that end with `BACKUP_SUFFIX`. Newly archived files are “touched” to now so they aren’t deleted immediately.
-- If `MOVE_ORIGINAL_FILES=False`, backups remain alongside the originals (still suffixed). The sweeper does not act on in-place backups — only on files within MOVE_ORIGINAL_FILES_DEST.
-
----
-
-## Database
-
-The script uses a small SQLite DB (default sonarr_tdarr_state.db) to remember which source files have already been copied to Tdarr input.
-
-- To create the DB structure explicitly, run the included helper:
-
-````bash
-python3 create_db.py
-````
-> Tip: If you ever want to reprocess files from the copy phase, you can delete the DB or remove specific rows. (Do not edit while the script runs.)
-
----
-
-## Usage
-
-Run once (foreground):
-````bash
+# Full run (copy + restore + sweep)
 python3 tdarr_sync.py
-````
-Dry run (no writes; logs actions):
-````bash
+
+# Dry run (logs actions without making changes)
 python3 tdarr_sync.py --dry-run
-````
-Copy only (skip restore of Tdarr outputs for this run):
-````bash
+
+# Copy-only run (skip restore for this invocation)
 python3 tdarr_sync.py --skip-restore
-````
-Typical cadence:
+```
 
-1) Copy phase runs every hour (or more frequently).
+### Scheduling examples
 
-2) Restore phase runs in the same job: whenever a completed file is found in `TDARR_OUTPUT_DIR`, it is restored.
+**cron**
 
-3) After restore, the sweeper runs to enforce retention on the archive tree.
-
-If running larger datasets or a first time run against multiple tagged series, recommended to run in `Tmux` or `Screen` if accessing remote hosts.
-
----
-
-## Scheduling
-### cron (Linux)
-Example: run every 30 minutes with logs handled by the script:
-````bash
+```bash
 */30 * * * * cd /path/to/tdarr_sync && /path/to/.venv/bin/python3 tdarr_sync.py >> /var/log/cron-tdarr_sync.log 2>&1
-````
-### systemd (Linux)
-`/etc/systemd/system/tdarr-sync.service`:
-````
+```
+
+**systemd**
+
+```
 [Unit]
 Description=Tdarr Sync (Sonarr ➜ Tdarr ➜ Library)
 After=network-online.target
@@ -126,68 +196,73 @@ Group=media
 
 [Install]
 WantedBy=multi-user.target
-````
-````bash
+```
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now tdarr-sync.service
 journalctl -u tdarr-sync.service -f
-````
-----
-## Logging & Alerts
-- Rotating log at `LOG_FILE` (default max 10 MB x `LOG_BACKUP_COUNT`).
-- Telegram errors: set `TELEGRAM_BOT_TOKEN` (or `TELEGRAM_TOKEN`) and `TELEGRAM_CHAT_ID`.
+```
 
 ---
-## How backups are named & cleaned
-- On restore, if destination exists:
-    - The original is renamed to `<name><BACKUP_SUFFIX>` (e.g., `Episode.mkv.orig`).
-    - If that exists, a unique variant is created: `<name>.<epoch><BACKUP_SUFFIX>` to keep `BACKUP_SUFFIX` at the end (so the sweeper recognizes it).
-- If `MOVE_ORIGINAL_FILES=True`, the renamed backup is moved to:
-````
+
+## How Backups Are Named & Cleaned
+
+- On restore, if the destination exists it becomes `<name><BACKUP_SUFFIX>` (for example `Episode.mkv.orig`).
+- If that filename already exists, the worker appends an epoch timestamp **before** the suffix to keep clean sweeper matches (e.g. `Episode.1700000000.orig`).
+- With `MOVE_ORIGINAL_FILES=true`, the renamed file moves to:
+
+```
 MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
-````
-And it is touched to “now” so `DELETE_ORIGINAL_FILES_DAYS` starts counting from archive time.
-- The sweeper removes files in the archive tree that end with `BACKUP_SUFFIX` and are older than `DELETE_ORIGINAL_FILES_DAYS` (or immediately if set to 0).
+```
+
+- Archived files have their mtime updated to “now” so retention windows start when the file was replaced.
+- The sweeper removes files ending with `BACKUP_SUFFIX` inside `MOVE_ORIGINAL_FILES_DEST` once they exceed `DELETE_ORIGINAL_FILES_DAYS` (set `0` to delete immediately).
 
 ---
-## Common Pitfalls & Troubleshooting
-### - “.db is tracked by Git”:
-`.gitignore` only affects untracked files. If your DB was committed earlier:
-````bash
-git rm --cached sonarr_tdarr_state.db
-echo "sonarr_tdarr_state.db" >> .gitignore
-git commit -m "chore(gitignore): untrack local state DB"
-````
-### - Wrong path mapping:
-If the script can’t find source files, verify that `SONARR_BASE_PATH` actually matches your Sonarr paths and that `LOCAL_MOUNT_BASE_PATH` points to the correct local mount.
-### - Permissions:
-Ensure the script’s user can read `BASE_DIR` and write into `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, and (if used) `MOVE_ORIGINAL_FILES_DEST`.
-### - Tdarr outputs never restore:
-Confirm Tdarr is writing to `TDARR_OUTPUT_DIR` using the same relative structure. Drop a test file mirroring a real relative path to validate the restore step.
-### - Backups not deleting:
-The sweeper acts only in MOVE_ORIGINAL_FILES_DEST and only on files ending with BACKUP_SUFFIX. Ensure those two conditions are met.
 
-----
+## Troubleshooting
+
+- **Database missing / schema errors** — the API warns if the DB file is absent. Run the worker once (or `python3 create_db.py`) to create it.
+- **Mount paths wrong** — double-check the `HOST_*` paths map to real directories and that the in-container equivalents (`BASE_DIR`, etc.) match how Tdarr/Sonarr present paths.
+- **Permissions** — if files appear as root-owned on the host, set `PUID`/`PGID` in `.env` to match your media user/group.
+- **Tdarr outputs never restore** — verify Tdarr writes to the mounted `HOST_TDARR_OUTPUT` with the same relative structure the script expects.
+- **Backups not deleting** — the sweeper only touches `MOVE_ORIGINAL_FILES_DEST` and only files ending with the backup suffix.
+
+---
+
 ## Development
-Conventional commits are encouraged `(e.g., feat(sync): archive originals only after restore)`.
-Changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Quick Dev Loop
-````bash
-# Dry run
-python3 tdarr_sync.py --dry-run
+- Install Python deps for the worker/API locally:
+  ```bash
+  pip install -r requirements/base.txt
+  ```
+- Boot the API locally:
+  ```bash
+  uvicorn api.main:app --reload
+  ```
+- Frontend development:
+  ```bash
+  cd web
+  npm install
+  npm run dev
+  ```
+- Compose can be used for full-stack dev with live reload by mounting the repository instead of copying — tweak `docker-compose.override.yml` as needed.
 
-# Simulate restore
-mkdir -p "$TDARR_OUTPUT_DIR/Show/Season 01"
-cp /path/to/sample.mkv "$TDARR_OUTPUT_DIR/Show/Season 01/Episode.mkv"
-python3 tdarr_sync.py
-````
-----
+Conventional commits are encouraged. The changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and we aim for [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
 ## Security Notes
-- Never commit your .env file. Use .gitignore.
-- Consider using read-only Sonarr API keys scoped to your instance.
+
+- Never commit your `.env` (already ignored).
+- Prefer scoped Sonarr API keys and read-only Telegram bots.
+- Place the stack behind a reverse proxy with TLS if you expose the dashboard beyond your LAN.
+
+---
 
 ## Roadmap / Ideas
-- Optional SQLite tracking of archived files for richer retention/reporting.
-- Parallelism for large copy sets (with rate limits).
-- Health endpoint or metrics export.
+
+- Optional Prometheus metrics export.
+- Tdarr queue introspection for richer status cards.
+- Role-based access control for the dashboard/API.
