@@ -81,8 +81,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 
 - `TZ` — propagated to all containers; controls timestamps and log formatting.
 - `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
-- `LOG_FILE`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` — worker logging config.
-- `API_LOG_FILE` — API log path (set empty to log to stdout only).
+- `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
 - `NEXT_PUBLIC_API_BASE_URL` — URL the web client uses to talk to the API (`http://api:8000` in docker).
 - Sonarr/Tdarr paths mirror the original script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, etc.).
 
