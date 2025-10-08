@@ -36,6 +36,10 @@ if not logger.handlers:
     if LOG_FILE:
         log_path = Path(LOG_FILE)
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_path.touch(exist_ok=True)
+        except PermissionError:
+            pass
         _file_handler = WatchedFileHandler(log_path)
         _file_handler.setFormatter(formatter)
         logger.addHandler(_file_handler)
