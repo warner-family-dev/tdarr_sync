@@ -12,11 +12,25 @@ from .settings import settings
 from .sync_runner import SyncAlreadyRunningError, SyncRunner
 
 
+class TZFormatter(logging.Formatter):
+    converter = datetime.fromtimestamp
+
+    def __init__(self, fmt: str, tz):
+        super().__init__(fmt)
+        self.tz = tz
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=self.tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
+
+
 logger = logging.getLogger("tdarr_sync.api")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    formatter = logging.Formatter("%(asctime)s %(levelname)s [API] %(message)s")
+    formatter = TZFormatter("%(asctime)s %(levelname)s [API] %(message)s", settings.zoneinfo)
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)

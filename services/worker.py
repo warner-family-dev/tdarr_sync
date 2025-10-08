@@ -3,8 +3,22 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from logging.handlers import WatchedFileHandler
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+class _TZFormatter(logging.Formatter):
+    def __init__(self, fmt: str, tz):
+        super().__init__(fmt)
+        self._tz = tz
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=self._tz)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -12,6 +26,14 @@ def _bool_env(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _current_zone() -> ZoneInfo:
+    tz_name = os.getenv("TZ", "UTC")
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
 
 
 SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "1800"))
@@ -28,7 +50,7 @@ logger = logging.getLogger("tdarr_sync.worker")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    formatter = logging.Formatter("%(asctime)s %(levelname)s [WORKER] %(message)s")
+    formatter = _TZFormatter("%(asctime)s %(levelname)s [WORKER] %(message)s", _current_zone())
     _console_handler = logging.StreamHandler()
     _console_handler.setFormatter(formatter)
     logger.addHandler(_console_handler)

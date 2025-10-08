@@ -2,6 +2,8 @@
 .smbcredentials
 .env
 *.db
+logs/
+data/
 
 # macOS system files
 .DS_Store
