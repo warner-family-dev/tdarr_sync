@@ -1,9 +1,40 @@
-# Ignore credentials and environment files
-.smbcredentials
-.env
-*.db
-logs/
-data/
+# Auth/session artifacts
+cookies.txt
+*.cookies
+*.cookiejar
 
-# macOS system files
-.DS_Store
+# Secrets
+.env
+.env.*
+!.env.example
+.venv-*
+.venv/
+
+# DB & data
+/data/
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# API build/cache
+/api/.pytest_cache/
+/api/.venv
+/api/whiskey.db
+/api/static/uploads/
+
+# Web build/cache
+/web/node_modules/
+/web/.next/
+/web/.turbo/
+/web/.env.local__pycache__/
+
+# Internal documentation
+dev-docs/
+# Git worktrees
+.worktrees/
