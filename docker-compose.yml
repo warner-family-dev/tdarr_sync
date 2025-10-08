@@ -18,7 +18,6 @@ services:
       - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
 
   api:
     build:
@@ -42,7 +41,6 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
 
   web:
     build:

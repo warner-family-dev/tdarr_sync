@@ -37,6 +37,10 @@ class Settings:
         self.state_db_file.parent.mkdir(parents=True, exist_ok=True)
         if self.log_file:
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                self.log_file.touch(exist_ok=True)
+            except PermissionError:
+                pass
         if not self.cors_allow_origins and not self.allow_all_cors:
             # Fall back to localhost if custom list not provided and allow_all_cors is false
             self.cors_allow_origins = ["http://localhost:3000"]

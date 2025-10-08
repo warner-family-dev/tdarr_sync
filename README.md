@@ -45,6 +45,7 @@ Shared volumes:
    - Point the `HOST_*` variables at real host directories that contain your Sonarr library and Tdarr input/output/archives.
    - Fill in Sonarr credentials (`SONARR_URL`, `SONARR_API_KEY`, optional `SONARR_TAG_NAME`).
    - If you mount an archive folder, ensure it exists and is writable.
+   - Create the `TDARR_SYNC_DATA_DIR` and `TDARR_SYNC_LOG_DIR` directories on the host and make sure they’re owned by the user `PUID`/`PGID` (defaults to `1000:1000`).
 3. Bring the stack up:
    ```bash
    docker compose up -d --build
