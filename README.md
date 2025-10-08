@@ -141,9 +141,7 @@ Under the hood the worker still drives `tdarr_sync.py`, so all original guarante
 ## Database & Logging
 
 - Database file: `${TDARR_SYNC_DATA_DIR}/sonarr_tdarr_state.db` (or whatever you set `STATE_DB_FILE` to). Use the bundled `create_db.py` if you want to pre-create the schema.
-- Both API and worker leverage rotating log handlers. With defaults you’ll find:
-  - Worker: `/logs/tdarr_sync.log`
-  - API: `/logs/api.log`
+- All services emit to a shared log at `/logs/tdarr_sync.log`; each line is prefixed with `[WORKER]`, `[API]`, or `[WEB]` so you can filter quickly.
 - Bind-mount these directories into your backup strategy if you rely on historical logs.
 
 ---

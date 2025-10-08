@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - README restructured around the new containerised architecture while retaining legacy CLI guidance.
+- Consolidated service logging into a single shared `tdarr_sync.log` with service-prefixed entries.
 
 ## [1.1.0] - 2025-08-12
 ### Changed

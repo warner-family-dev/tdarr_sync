@@ -5,6 +5,7 @@ from typing import List
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from logging.handlers import WatchedFileHandler
 
 from . import db, schemas
 from .settings import settings
@@ -14,14 +15,17 @@ from .sync_runner import SyncAlreadyRunningError, SyncRunner
 logger = logging.getLogger("tdarr_sync.api")
 logger.setLevel(logging.INFO)
 
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-logger.addHandler(console_handler)
+if not logger.handlers:
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [API] %(message)s")
 
-if settings.api_log_file:
-    file_handler = logging.FileHandler(settings.api_log_file)
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(file_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    if settings.log_file:
+        file_handler = WatchedFileHandler(settings.log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
 
 app = FastAPI(title="Tdarr Sync API", version="0.1.0")

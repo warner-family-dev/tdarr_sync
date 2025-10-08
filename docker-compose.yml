@@ -30,7 +30,7 @@ services:
     environment:
       TZ: ${TZ}
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
-      API_LOG_FILE: ${API_LOG_FILE:-/logs/api.log}
+      LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
       SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
     volumes:
@@ -53,8 +53,11 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
       TZ: ${TZ}
+      LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
       - api
     ports:
       - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped
+    volumes:
+      - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
