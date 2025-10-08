@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+import { triggerSyncAction } from "./actions";
 
 type ProcessedFile = {
   file_path: string;
@@ -46,21 +46,6 @@ async function loadDashboardData() {
     const message = error instanceof Error ? error.message : "Unable to reach Tdarr Sync API";
     return { summary: null, files: [] as ProcessedFile[], status: null, error: message };
   }
-}
-
-export async function triggerSync(formData: FormData) {
-  "use server";
-  const dryRun = formData.get("dry-run") === "on" || formData.get("dry-run") === "true";
-  const query = dryRun ? "?dry_run=true" : "";
-  try {
-    const res = await fetch(`${API_BASE_URL}/sync/run${query}`, { method: "POST", cache: "no-store" });
-    if (!res.ok && res.status !== 409) {
-      throw new Error(`Sync trigger failed: ${res.status} ${res.statusText}`);
-    }
-  } catch (error) {
-    console.error(error);
-  }
-  revalidatePath("/");
 }
 
 function formatBytes(bytes: number | null): string {
@@ -111,7 +96,7 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
-          <form action={triggerSync} className="trigger-form">
+          <form action={triggerSyncAction} className="trigger-form">
             <button className="button" type="submit" disabled={status?.running}>
               Trigger Sync
             </button>
