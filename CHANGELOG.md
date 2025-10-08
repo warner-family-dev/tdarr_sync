@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2025-10-08
 ### Added
 - Docker-first deployment with `docker-compose.yml`, shared volumes, and `.env.example`.
 - FastAPI service exposing health, metrics, processed file history, and manual sync trigger endpoints.
@@ -32,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
-[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/keatre/tdarr_sync/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/keatre/tdarr_sync/compare/v1.0.0...v1.1.0
