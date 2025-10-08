@@ -3,8 +3,10 @@ import os
 import subprocess
 import sys
 import time
-from logging.handlers import RotatingFileHandler
+from logging.handlers import WatchedFileHandler
 from pathlib import Path
+
+
 def _bool_env(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -20,26 +22,23 @@ SYNC_SCRIPT_PATH = Path(os.getenv("SYNC_SCRIPT_PATH", "/app/tdarr_sync.py"))
 SYNC_PYTHON_EXECUTABLE = os.getenv("SYNC_PYTHON_EXECUTABLE", sys.executable or "python")
 
 LOG_FILE = os.getenv("LOG_FILE")
-LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
-LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "3"))
 
 
 logger = logging.getLogger("tdarr_sync.worker")
 logger.setLevel(logging.INFO)
-_console_handler = logging.StreamHandler()
-_console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-logger.addHandler(_console_handler)
 
-if LOG_FILE:
-    log_path = Path(LOG_FILE)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    _file_handler = RotatingFileHandler(
-        log_path,
-        maxBytes=LOG_MAX_BYTES,
-        backupCount=LOG_BACKUP_COUNT,
-    )
-    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_file_handler)
+if not logger.handlers:
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [WORKER] %(message)s")
+    _console_handler = logging.StreamHandler()
+    _console_handler.setFormatter(formatter)
+    logger.addHandler(_console_handler)
+
+    if LOG_FILE:
+        log_path = Path(LOG_FILE)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        _file_handler = WatchedFileHandler(log_path)
+        _file_handler.setFormatter(formatter)
+        logger.addHandler(_file_handler)
 
 
 def run_sync(dry_run: bool = False) -> int:
