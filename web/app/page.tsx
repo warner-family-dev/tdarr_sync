@@ -1,3 +1,4 @@
+import AutoRefresh from "./AutoRefresh";
 import { triggerSyncAction } from "./actions";
 
 type ProcessedFile = {
@@ -18,7 +19,9 @@ type Summary = {
 
 type SyncStatus = {
   running: boolean;
+  last_started_at: number | null;
   last_started_at_iso: string | null;
+  last_finished_at: number | null;
   last_finished_at_iso: string | null;
   last_exit_code: number | null;
   last_error: string | null;
@@ -64,6 +67,7 @@ export default async function DashboardPage() {
   const { summary, files, status, error } = await loadDashboardData();
   return (
     <div>
+      <AutoRefresh initialStatus={status} intervalMs={5000} />
       {error && <div className="error-banner">⚠️ {error}</div>}
 
       <section className="grid">
