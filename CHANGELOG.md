@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Docker-first deployment with `docker-compose.yml`, shared volumes, and `.env.example`.
+- FastAPI service exposing health, metrics, processed file history, and manual sync trigger endpoints.
+- Next.js dashboard (`web/`) that surfaces status, metrics, and a one-click sync trigger.
+- Worker service wrapper that schedules `tdarr_sync.py` inside the container and respects interval/dry-run settings.
+
+### Changed
+- README restructured around the new containerised architecture while retaining legacy CLI guidance.
 
 ## [1.1.0] - 2025-08-12
 ### Changed
