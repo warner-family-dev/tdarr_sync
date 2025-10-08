@@ -169,6 +169,8 @@ python3 tdarr_sync.py --dry-run
 python3 tdarr_sync.py --skip-restore
 ```
 
+> Tip: add `--interactive` when running locally to pick series via a TTY prompt. Containerized runs disable prompts by default to stay non-interactive.
+
 ### Scheduling examples
 
 **cron**

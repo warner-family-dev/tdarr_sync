@@ -22,6 +22,7 @@ from logging.handlers import RotatingFileHandler
 import os
 import shutil
 import sqlite3
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -53,7 +54,7 @@ try:
     DELETE_ORIGINAL_FILES_DAYS = int(os.environ.get("DELETE_ORIGINAL_FILES_DAYS", "30"))
 
     # Interactive default via .env (new)
-    ENV_INTERACTIVE = os.environ.get("INTERACTIVE", "True").lower() in ("true", "1", "yes")
+    ENV_INTERACTIVE = os.environ.get("INTERACTIVE", "False").lower() in ("true", "1", "yes")
 
     # Accept either TELEGRAM_BOT_TOKEN or TELEGRAM_TOKEN without requiring .env change
     TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
@@ -549,6 +550,9 @@ def main():
     args = parse_args()
     # CLI flag enables interactive; otherwise fall back to .env default
     use_interactive = args.interactive or ENV_INTERACTIVE
+    if use_interactive and not sys.stdin.isatty():
+        logger.warning("Interactive mode requested but no TTY detected; continuing without prompts.")
+        use_interactive = False
 
     logger.info("Starting tdarr_sync (dry_run=%s, interactive=%s)", args.dry_run, use_interactive)
     try:
