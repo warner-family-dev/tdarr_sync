@@ -5,8 +5,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Dashboard auto-refresh that polls `/sync/status` and reloads automatically when sync state changes.
+
 ### Changed
-- Default deployment disables interactive CLI prompts (`INTERACTIVE`) so container runs no longer require a TTY; interactive mode remains available via CLI flag when running manually.
+- Default deployment disables interactive CLI prompts (`INTERACTIVE`) so container runs are fully headless; pass `--interactive` only for manual CLI runs.
+- Worker/API/web logging now respects the configured `TZ`, and the web logger writes timestamps in the same zone.
+- API service mounts the Sonarr/Tdarr media directories, enabling web-triggered syncs to reuse library paths.
+- Docker entrypoint ensures `/logs` and `/data` (and their contents) are owned by `PUID`/`PGID`.
+
+### Fixed
+- Consolidated log writer guarantees all `[WORKER]`, `[API]`, and `[WEB]` entries land in `tdarr_sync.log`.
+- Next.js build passes after moving the server action to its own module and tightening SyncStatus types for auto-refresh.
+- Web-triggered runs no longer fail due to missing TTYs; interactive prompts are skipped when none is available.
 
 ## [2.0.0] - 2025-10-08
 ### Added
