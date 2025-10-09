@@ -70,7 +70,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 
 | Variable | Description |
 | --- | --- |
-| `HOST_LIBRARY_MOUNT` | Read-only mount of your Sonarr-managed library (source files). |
+| `HOST_LIBRARY_MOUNT` | Writable mount of your Sonarr-managed library (original media). Tdarr Sync needs write access to archive/restore files. |
 | `HOST_TDARR_INPUT` | Writable mount where Tdarr watches for incoming jobs. |
 | `HOST_TDARR_OUTPUT` | Writable mount where Tdarr drops transcoded outputs. |
 | `HOST_ARCHIVE_DIR` | (Optional) Writable mount used when `MOVE_ORIGINAL_FILES=true`. |

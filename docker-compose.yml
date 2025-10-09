@@ -11,7 +11,7 @@ services:
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library:ro
+      - ${HOST_LIBRARY_MOUNT}:/media/library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
@@ -33,7 +33,7 @@ services:
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
       SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library:ro
+      - ${HOST_LIBRARY_MOUNT}:/media/library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
