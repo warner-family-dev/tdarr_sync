@@ -135,6 +135,7 @@ Under the hood the worker still drives `tdarr_sync.py`, so all original guarante
 - **Retention:** after each restore the sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (when enabled) and only inside the archive tree.
 - **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
 - **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
+- When `SYNC_INTERVAL_SECONDS <= 0`, the container boots once, logs the skip, and stays stopped (restart policy is `on-failure`) so the stack only runs on manual triggers.
 
 ---
 
