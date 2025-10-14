@@ -1,6 +1,7 @@
 import AutoRefresh from "./AutoRefresh";
 import RestoreOriginals from "./RestoreOriginals";
 import { triggerSyncAction } from "./actions";
+import { apiFetchJson } from "./apiClient";
 
 type ProcessedFile = {
   file_path: string;
@@ -28,7 +29,6 @@ type SyncStatus = {
   last_error: string | null;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DISPLAY_TIMEZONE = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const timestampFormatter = new Intl.DateTimeFormat("en-US", {
@@ -67,20 +67,12 @@ function formatTimestamp(iso: string | null | undefined): string {
   return `${year}-${month}-${day}  ${hour}:${minute}${dayPeriod}`;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
-}
-
 async function loadDashboardData() {
   try {
     const [summary, files, status] = await Promise.all([
-      fetchJson<Summary>("/metrics/summary"),
-      fetchJson<ProcessedFile[]>("/processed-files?limit=25"),
-      fetchJson<SyncStatus>("/sync/status"),
+      apiFetchJson<Summary>("/metrics/summary", { cache: "no-store" }),
+      apiFetchJson<ProcessedFile[]>("/processed-files?limit=25", { cache: "no-store" }),
+      apiFetchJson<SyncStatus>("/sync/status", { cache: "no-store" }),
     ]);
     return { summary, files, status, error: null as string | null };
   } catch (error: unknown) {

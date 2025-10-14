@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetchJson } from "./apiClient";
 
 type SeriesStatus = "full" | "partial" | "none";
 
@@ -40,8 +41,6 @@ type RestoreResponse = {
   messages: string[];
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
 function statusLabel(status: SeriesStatus): string {
   switch (status) {
     case "full":
@@ -70,16 +69,6 @@ function buildErrorMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    const message = detail?.detail ?? `${response.status} ${response.statusText}`;
-    throw new Error(typeof message === "string" ? message : "Request failed");
-  }
-  return response.json();
-}
-
 export default function RestoreOriginalsControl() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -97,7 +86,7 @@ export default function RestoreOriginalsControl() {
     setSeriesLoading(true);
     setSeriesError(null);
     try {
-      const payload = await fetchJson<{ series: RestoreSeriesEntry[] }>(`${API_BASE_URL}/restore/series`, {
+      const payload = await apiFetchJson<{ series: RestoreSeriesEntry[] }>("/restore/series", {
         cache: "no-store",
       });
       setSeries(payload.series);
@@ -143,7 +132,7 @@ export default function RestoreOriginalsControl() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const payload = await fetchJson<RestoreResponse>(`${API_BASE_URL}/restore/run`, {
+      const payload = await apiFetchJson<RestoreResponse>("/restore/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selection: selection.trim(), password }),

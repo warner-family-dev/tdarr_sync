@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetchJson } from "../apiClient";
 
 export type SyncStatus = {
   running: boolean;
@@ -12,8 +13,6 @@ export type SyncStatus = {
   last_exit_code: number | null;
   last_error: string | null;
 };
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 const serialize = (status: SyncStatus | null) => JSON.stringify(status ?? {});
 
@@ -30,11 +29,7 @@ export function useAutoRefresh(initialStatus: SyncStatus | null, intervalMs = 50
 
     const poll = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/sync/status`, { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const nextStatus: SyncStatus = await response.json();
+        const nextStatus = await apiFetchJson<SyncStatus>("/sync/status", { cache: "no-store" });
         const serialized = serialize(nextStatus);
         if (!cancelled && serialized !== statusRef.current) {
           statusRef.current = serialized;
