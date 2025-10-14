@@ -9,6 +9,7 @@ from api.restore_service import (
     RestoreSelectionError,
     SeasonEntry,
     SeriesEntry,
+    SeriesOutcome,
     parse_selection,
 )
 
@@ -107,6 +108,63 @@ class RestoreServiceAuthTests(unittest.TestCase):
         self.assertEqual(service._episode_season_number({"seasonNumber": None}), 0)
         self.assertEqual(service._episode_season_number({"seasonNumber": "3"}), 3)
         self.assertEqual(service._episode_season_number({"seasonNumber": "abc"}), 0)
+
+    def test_restore_skips_db_cleanup_when_errors(self):
+        with patch.object(RestoreService, "_load_config", return_value=self.config):
+            service = RestoreService()
+
+        entry = SeriesEntry(
+            index=1,
+            series_id=99,
+            title="Broken",
+            processed=0,
+            total=0,
+            status="none",
+            last_processed_at=None,
+            last_processed_at_iso=None,
+            seasons=[],
+        )
+
+        error_outcome = SeriesOutcome(series_id=99, title="Broken", errors=["failure"], _db_paths_to_remove=["/tmp/foo"])
+
+        with patch.object(service, "_load_processed_map", return_value={}), patch.object(
+            service, "_fetch_series_list", return_value=[{"id": 99, "title": "Broken"}]
+        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
+            service, "_restore_single_series", return_value=error_outcome
+        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+            service.restore(password="secret", structured=[{"series_id": 99, "seasons": None}])
+            mock_delete.assert_not_called()
+
+    def test_restore_cleans_db_on_success(self):
+        with patch.object(RestoreService, "_load_config", return_value=self.config):
+            service = RestoreService()
+
+        entry = SeriesEntry(
+            index=1,
+            series_id=7,
+            title="Clean",
+            processed=0,
+            total=0,
+            status="none",
+            last_processed_at=None,
+            last_processed_at_iso=None,
+            seasons=[],
+        )
+
+        success_outcome = SeriesOutcome(
+            series_id=7,
+            title="Clean",
+            restored=["/tmp/foo"],
+            _db_paths_to_remove=["/tmp/foo"],
+        )
+
+        with patch.object(service, "_load_processed_map", return_value={}), patch.object(
+            service, "_fetch_series_list", return_value=[{"id": 7, "title": "Clean"}]
+        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
+            service, "_restore_single_series", return_value=success_outcome
+        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+            service.restore(password="secret", structured=[{"series_id": 7, "seasons": None}])
+            mock_delete.assert_called_once()
 
 
 if __name__ == "__main__":

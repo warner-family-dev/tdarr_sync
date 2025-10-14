@@ -220,6 +220,9 @@ def run_restore(payload: schemas.RestoreRequest):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RestoreError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Restore run failed with unexpected error")
+        raise HTTPException(status_code=500, detail="Restore failed due to an unexpected error.") from exc
 
     summary = schemas.RestoreSummary(
         series_requested=outcome.series_requested,

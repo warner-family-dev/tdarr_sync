@@ -269,6 +269,7 @@ class RestoreService:
         total_restored = 0
         total_missing_db = 0
         total_missing_archive = 0
+        any_errors = False
 
         for entry, seasons in selected:
             series_outcome = self._restore_single_series(entry, processed_map, seasons)
@@ -276,14 +277,20 @@ class RestoreService:
             total_restored += len(series_outcome.restored)
             total_missing_db += len(series_outcome.skipped_missing_db)
             total_missing_archive += len(series_outcome.skipped_missing_archive)
+            if series_outcome.errors:
+                any_errors = True
 
         to_remove: List[str] = []
         for result in outcomes:
             to_remove.extend(result._db_paths_to_remove)
 
-        if to_remove:
+        if to_remove and not any_errors:
             removed = db.delete_processed_entries(self.config.state_db_file, to_remove)
             logger.info("Removed %s processed entries from DB.", removed)
+        elif to_remove and any_errors:
+            logger.warning(
+                "Restore completed with errors; skipping DB cleanup for %d processed entries.", len(to_remove)
+            )
 
         messages = []
         for outcome in outcomes:
@@ -293,6 +300,11 @@ class RestoreService:
                 messages.append(f"No files restored for '{outcome.title}'. See errors.")
             else:
                 messages.append(f"No matching files to restore for '{outcome.title}'.")
+
+        if any_errors:
+            messages.append(
+                "One or more series reported errors; processed markers were left intact so you can retry the restore."
+            )
 
         return RestoreOutcome(
             series_requested=len(selected),
