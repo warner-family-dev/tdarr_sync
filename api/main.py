@@ -10,6 +10,14 @@ from logging.handlers import WatchedFileHandler
 from . import db, schemas
 from .settings import settings
 from .sync_runner import SyncAlreadyRunningError, SyncRunner
+from .restore_service import (
+    RestoreAuthError,
+    RestoreConfigurationError,
+    RestoreError,
+    RestoreNotFoundError,
+    RestoreSelectionError,
+    RestoreService,
+)
 
 
 class TZFormatter(logging.Formatter):
@@ -54,6 +62,12 @@ app.add_middleware(
 )
 
 runner = SyncRunner(settings.sync_script_path, settings.sync_python_executable)
+
+try:
+    restore_service = RestoreService()
+except RestoreConfigurationError as exc:  # pragma: no cover - configuration issue
+    logger.error("Restore service disabled: %s", exc)
+    restore_service = None
 
 
 def _now_iso() -> str:
@@ -138,3 +152,73 @@ def trigger_sync(dry_run: bool = False):
         return schemas.SyncTriggerResponse(accepted=True, running=True)
     except SyncAlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/restore/series", response_model=schemas.RestoreSeriesList)
+def list_restore_series():
+    if restore_service is None:
+        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+
+    try:
+        entries = restore_service.series_catalog()
+    except RestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return schemas.RestoreSeriesList(
+        series=[
+            schemas.RestoreSeriesEntry(
+                index=item.index,
+                series_id=item.series_id,
+                title=item.title,
+                processed=item.processed,
+                total=item.total,
+                status=item.status,
+                last_processed_at=item.last_processed_at,
+                last_processed_at_iso=item.last_processed_at_iso,
+            )
+            for item in entries
+        ]
+    )
+
+
+@app.post("/restore/run", response_model=schemas.RestoreResponse)
+def run_restore(payload: schemas.RestoreRequest):
+    if restore_service is None:
+        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+
+    status = runner.status()
+    if status.get("running"):
+        raise HTTPException(status_code=409, detail="Sync is currently running; wait for it to finish.")
+
+    try:
+        outcome = restore_service.restore(payload.selection, payload.password)
+    except RestoreAuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except RestoreSelectionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RestoreNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    summary = schemas.RestoreSummary(
+        series_requested=outcome.series_requested,
+        series_processed=outcome.series_processed,
+        files_restored=outcome.files_restored,
+        files_skipped_missing_db=outcome.files_skipped_missing_db,
+        files_skipped_missing_archive=outcome.files_skipped_missing_archive,
+    )
+    results = [
+        schemas.RestoreSeriesResult(
+            series_id=result.series_id,
+            title=result.title,
+            restored=result.restored,
+            archived_transcodes=result.archived_transcodes,
+            skipped_missing_db=result.skipped_missing_db,
+            skipped_missing_archive=result.skipped_missing_archive,
+            skipped_outside_library=result.skipped_outside_library,
+            errors=result.errors,
+        )
+        for result in outcome.results
+    ]
+    return schemas.RestoreResponse(summary=summary, results=results, messages=outcome.messages)

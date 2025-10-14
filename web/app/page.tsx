@@ -1,4 +1,5 @@
 import AutoRefresh from "./AutoRefresh";
+import RestoreOriginals from "./RestoreOriginals";
 import { triggerSyncAction } from "./actions";
 
 type ProcessedFile = {
@@ -146,6 +147,9 @@ export default async function DashboardPage() {
               Dry run
             </label>
           </form>
+          <div className="restore-launch">
+            <RestoreOriginals />
+          </div>
         </article>
 
         <article className="card">

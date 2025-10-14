@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,51 @@ class SyncStatus(BaseModel):
 class SyncTriggerResponse(BaseModel):
     accepted: bool
     running: bool
+
+
+class RestoreSeriesEntry(BaseModel):
+    index: int = Field(..., ge=1)
+    series_id: int = Field(..., ge=0)
+    title: str
+    processed: int = Field(..., ge=0)
+    total: int = Field(..., ge=0)
+    status: Literal["full", "partial", "none"]
+    last_processed_at: Optional[int] = None
+    last_processed_at_iso: Optional[str] = None
+
+
+class RestoreSeriesList(BaseModel):
+    series: List[RestoreSeriesEntry] = Field(default_factory=list)
+
+
+class RestoreRequest(BaseModel):
+    selection: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class RestoreSeriesResult(BaseModel):
+    series_id: int
+    title: str
+    restored: List[str] = Field(default_factory=list)
+    archived_transcodes: List[str] = Field(default_factory=list)
+    skipped_missing_db: List[str] = Field(default_factory=list)
+    skipped_missing_archive: List[str] = Field(default_factory=list)
+    skipped_outside_library: List[str] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+
+
+class RestoreSummary(BaseModel):
+    series_requested: int
+    series_processed: int
+    files_restored: int
+    files_skipped_missing_db: int
+    files_skipped_missing_archive: int
+
+
+class RestoreResponse(BaseModel):
+    summary: RestoreSummary
+    results: List[RestoreSeriesResult] = Field(default_factory=list)
+    messages: List[str] = Field(default_factory=list)
 
 
 def to_iso(timestamp: Optional[int], tz) -> Optional[str]:

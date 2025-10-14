@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.0.2] - 2025-10-14
+### Added
+- Password-protected “Restore Originals” workflow on the dashboard with modal series selection (supports ranges and comma lists) and detailed results.
+- FastAPI `/restore/series` and `/restore/run` endpoints that validate the admin password, restore archived originals, archive transcoded files, and purge matching SQLite entries.
+
+### Changed
+- `.env.example` advertises the required `RESTORE_ADMIN_PASSWORD` variable for enabling the restore feature.
+
+---
+
 ## [2.0.1] - 2025-10-08
 ### Added
 - Dashboard auto-refresh that polls `/sync/status` and reloads automatically when sync state changes.
@@ -48,6 +58,8 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
-[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/keatre/tdarr_sync/compare/v2.0.1...v2.0.2
+[2.0.1]: https://github.com/keatre/tdarr_sync/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/keatre/tdarr_sync/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/keatre/tdarr_sync/compare/v1.0.0...v1.1.0
