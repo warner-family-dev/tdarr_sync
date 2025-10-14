@@ -99,6 +99,15 @@ class RestoreServiceAuthTests(unittest.TestCase):
                     structured=[{"series_id": 42, "seasons": [99]}],
                 )
 
+    def test_episode_season_number_handles_none(self):
+        with patch.object(RestoreService, "_load_config", return_value=self.config):
+            service = RestoreService()
+
+        self.assertEqual(service._episode_season_number({}), 0)
+        self.assertEqual(service._episode_season_number({"seasonNumber": None}), 0)
+        self.assertEqual(service._episode_season_number({"seasonNumber": "3"}), 3)
+        self.assertEqual(service._episode_season_number({"seasonNumber": "abc"}), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

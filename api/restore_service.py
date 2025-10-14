@@ -345,7 +345,7 @@ class RestoreService:
                 if ts and (last_ts or 0) < ts:
                     last_ts = ts
 
-            season_number = int(episode.get("seasonNumber") or 0)
+            season_number = self._episode_season_number(episode)
             stats = season_stats.setdefault(season_number, {"total": 0, "processed": 0, "last": None})
             stats["total"] = int(stats["total"]) + 1
             if ts is not None:
@@ -401,6 +401,16 @@ class RestoreService:
             return "full"
         return "partial"
 
+    @staticmethod
+    def _episode_season_number(episode: dict) -> int:
+        raw = episode.get("seasonNumber")
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
     def _restore_single_series(
         self,
         entry: SeriesEntry,
@@ -424,7 +434,7 @@ class RestoreService:
                 outcome.skipped_outside_library.append(str(translated))
                 continue
 
-            season_number = int(episode.get("seasonNumber") or 0)
+            season_number = self._episode_season_number(episode)
             if selected_seasons and season_number not in selected_seasons:
                 continue
 
