@@ -204,7 +204,7 @@ export default function RestoreOriginalsControl() {
     if (selectedSeries.size === 0) {
       return false;
     }
-    for (const entry of selectedSeries.values()) {
+    for (const entry of Array.from(selectedSeries.values())) {
       if (!entry.allSeasons && entry.seasons.size === 0) {
         return false;
       }
