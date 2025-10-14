@@ -378,22 +378,31 @@ export default function RestoreOriginalsControl() {
                   autoFocus
                 />
               </label>
-              {submitError && <p className="error-text">{submitError}</p>}
-              <div className="form-actions">
-                <button type="submit" className="button" disabled={!canSubmit}>
-                  {submitting ? "Restoring…" : "Run Restore"}
-                </button>
-                <button type="button" className="button ghost" onClick={handleClose} disabled={submitting}>
-                  Cancel
-                </button>
-              </div>
-            </form>
+            {submitError && <p className="error-text">{submitError}</p>}
+            <div className="form-actions">
+              <button type="submit" className="button" disabled={!canSubmit}>
+                {submitting ? "Restoring…" : "Run Restore"}
+              </button>
+              <button type="button" className="button ghost" onClick={handleClose} disabled={submitting}>
+                Cancel
+              </button>
+            </div>
+          </form>
 
-            {result && (
-              <div className="modal-section">
-                <h4>Result</h4>
-                <ul className="summary-list">
-                  {summaryItems.map((item) => (
+          {submitting && (
+            <div className="progress-container" role="status" aria-live="polite">
+              <div className="progress-bar">
+                <div className="progress-bar-indicator" />
+              </div>
+              <p className="progress-text">Restore in progress… originals are being moved back.</p>
+            </div>
+          )}
+
+          {result && (
+            <div className="modal-section">
+              <h4>Result</h4>
+              <ul className="summary-list">
+                {summaryItems.map((item) => (
                     <li key={item.label}>
                       <strong>{item.value}</strong> {item.label}
                     </li>

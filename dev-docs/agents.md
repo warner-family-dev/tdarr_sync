@@ -6,3 +6,4 @@
 - Next steps: finish validation, run smoke tests once environment is available, and confirm `.env` carries `RESTORE_ADMIN_PASSWORD`.
 - Update in progress: web client now proxies API calls via `/tdarr-api/*` rewrite (configurable with `NEXT_BACKEND_ORIGIN`); remember to restart the web container after adjusting Next config.
 - New requirement: UI now supports per-season restore selections; ensure API `/restore/series` shows seasons and `/restore/run` receives `selections` payload when testing the modal.
+- Added indeterminate progress bar in modal so users can see ongoing restore activity; check for animation and messaging after rebuilding the web bundle.

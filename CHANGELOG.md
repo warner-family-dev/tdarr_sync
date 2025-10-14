@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - `.env.example` advertises the required `RESTORE_ADMIN_PASSWORD` variable for enabling the restore feature.
 - Dashboard API calls now flow through a Next.js rewrite (`/tdarr-api/*`) so browsers can reach the FastAPI service without hard-coding container hostnames.
+- Restore modal shows a live in-progress bar while a restore job is running so users have visible feedback during longer operations.
 
 ---
 
