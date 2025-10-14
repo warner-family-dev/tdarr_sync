@@ -327,6 +327,8 @@ class RestoreService:
         season_stats: Dict[int, Dict[str, Optional[int] | int]] = {}
 
         for episode in episodes:
+            if not isinstance(episode, dict):
+                continue
             path = episode.get("path") or episode.get("relativePath")
             if not path:
                 continue
@@ -424,6 +426,8 @@ class RestoreService:
         episodes = self._fetch_episode_files(entry.series_id)
 
         for episode in episodes:
+            if not isinstance(episode, dict):
+                continue
             path = episode.get("path") or episode.get("relativePath")
             if not path:
                 continue
