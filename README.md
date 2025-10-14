@@ -82,7 +82,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `TZ` — propagated to all containers; controls timestamps and log formatting.
 - `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
 - `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
-- `NEXT_PUBLIC_API_BASE_URL` — URL the web client uses to talk to the API (`http://api:8000` in docker).
+- `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
 - Sonarr/Tdarr paths mirror the original script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, etc.).
 
 ### Worker cadence and behaviour
@@ -105,7 +105,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Mirrors the look-and-feel of `whiskey_db`: dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
 - Provides a manual trigger form (optionally as a dry run) — implemented via Next server actions that call the API.
-- Reads configuration from `NEXT_PUBLIC_API_BASE_URL`. In Docker this points at the internal `api` service; if running locally you can set it to `http://localhost:8000`.
+- Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.
 
 ---
 

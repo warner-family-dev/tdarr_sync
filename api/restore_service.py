@@ -3,7 +3,7 @@ import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 
@@ -54,6 +54,17 @@ class RestoreConfig:
 
 
 @dataclass
+class SeasonEntry:
+    number: int
+    name: str
+    processed: int
+    total: int
+    status: str
+    last_processed_at: Optional[int]
+    last_processed_at_iso: Optional[str]
+
+
+@dataclass
 class SeriesEntry:
     index: int
     series_id: int
@@ -63,12 +74,14 @@ class SeriesEntry:
     status: str
     last_processed_at: Optional[int]
     last_processed_at_iso: Optional[str]
+    seasons: List[SeasonEntry]
 
 
 @dataclass
 class SeriesOutcome:
     series_id: int
     title: str
+    selected_seasons: Optional[List[int]] = None
     restored: List[str] = field(default_factory=list)
     archived_transcodes: List[str] = field(default_factory=list)
     skipped_missing_db: List[str] = field(default_factory=list)
@@ -193,57 +206,72 @@ class RestoreService:
     def series_catalog(self) -> List[SeriesEntry]:
         processed_map = self._load_processed_map()
         series_list = self._fetch_series_list()
-        entries: List[SeriesEntry] = []
-        for series in series_list:
-            processed, total, last_ts = self._series_status(series, processed_map)
-            if total == 0:
-                status = "none"
-            elif processed >= total:
-                status = "full"
-            elif processed > 0:
-                status = "partial"
-            else:
-                status = "none"
-            entries.append(
-                SeriesEntry(
-                    index=0,
-                    series_id=int(series.get("id")),
-                    title=str(series.get("title") or "<untitled>"),
-                    processed=processed,
-                    total=total,
-                    last_processed_at=last_ts,
-                    last_processed_at_iso=to_iso(last_ts, self.config.tz_zone),
-                    status=status,
-                )
-            )
+        return self._build_entries(series_list, processed_map)
 
-        status_rank = {"full": 0, "partial": 1, "none": 2}
-        entries.sort(key=lambda item: (status_rank.get(item.status, 3), item.title.lower()))
-
-        for idx, entry in enumerate(entries, start=1):
-            entry.index = idx
-        return entries
-
-    def restore(self, selection: str, password: str) -> RestoreOutcome:
+    def restore(
+        self,
+        password: str,
+        selection_expr: Optional[str] = None,
+        structured: Optional[List[Dict[str, Optional[List[int]]]]] = None,
+    ) -> RestoreOutcome:
         if password != self.config.admin_password:
             raise RestoreAuthError("Invalid password.")
+
+        if not selection_expr and not structured:
+            raise RestoreSelectionError("A selection is required.")
 
         processed_map = self._load_processed_map()
         series_list = self._fetch_series_list()
         entries = self._build_entries(series_list, processed_map)
+        entry_by_id = {entry.series_id: entry for entry in entries}
 
-        indexes = parse_selection(selection, len(entries))
-        selected_entries = [entries[idx - 1] for idx in indexes]
-        if not selected_entries:
-            raise RestoreSelectionError("No series matched the selection.")
+        selected: List[Tuple[SeriesEntry, Optional[Set[int]]]] = []
+
+        if structured:
+            if not isinstance(structured, list) or len(structured) == 0:
+                raise RestoreSelectionError("Structured selection must include at least one series.")
+            for item in structured:
+                series_id_raw = item.get("series_id")
+                if series_id_raw is None:
+                    raise RestoreSelectionError("Structured selection missing series_id.")
+                try:
+                    series_id = int(series_id_raw)
+                except (TypeError, ValueError) as exc:
+                    raise RestoreSelectionError(f"Invalid series_id value: {series_id_raw}") from exc
+                entry = entry_by_id.get(series_id)
+                if entry is None:
+                    raise RestoreNotFoundError(f"Series id {series_id} not found in the current catalog.")
+
+                seasons_raw = item.get("seasons")
+                if not seasons_raw:
+                    selected.append((entry, None))
+                    continue
+
+                try:
+                    requested_seasons = {int(value) for value in seasons_raw}
+                except (TypeError, ValueError) as exc:
+                    raise RestoreSelectionError(f"Invalid season list for series {series_id}.") from exc
+
+                valid_numbers = {season.number for season in entry.seasons}
+                invalid = requested_seasons - valid_numbers
+                if invalid:
+                    raise RestoreSelectionError(
+                        f"Series '{entry.title}' does not contain seasons: {sorted(invalid)}"
+                    )
+                selected.append((entry, requested_seasons))
+        else:
+            indexes = parse_selection(selection_expr or "", len(entries))
+            if not indexes:
+                raise RestoreSelectionError("No series matched the selection.")
+            selected = [(entries[idx - 1], None) for idx in indexes]
 
         outcomes: List[SeriesOutcome] = []
         total_restored = 0
         total_missing_db = 0
         total_missing_archive = 0
 
-        for entry in selected_entries:
-            series_outcome = self._restore_single_series(entry, processed_map)
+        for entry, seasons in selected:
+            series_outcome = self._restore_single_series(entry, processed_map, seasons)
             outcomes.append(series_outcome)
             total_restored += len(series_outcome.restored)
             total_missing_db += len(series_outcome.skipped_missing_db)
@@ -267,7 +295,7 @@ class RestoreService:
                 messages.append(f"No matching files to restore for '{outcome.title}'.")
 
         return RestoreOutcome(
-            series_requested=len(selected_entries),
+            series_requested=len(selected),
             series_processed=sum(1 for o in outcomes if o.restored),
             files_restored=total_restored,
             files_skipped_missing_db=total_missing_db,
@@ -279,25 +307,8 @@ class RestoreService:
     def _build_entries(self, series_list, processed_map) -> List[SeriesEntry]:
         entries: List[SeriesEntry] = []
         for series in series_list:
-            processed, total, last_ts = self._series_status(series, processed_map)
-            status = "none"
-            if total > 0:
-                if processed >= total:
-                    status = "full"
-                elif processed > 0:
-                    status = "partial"
-            entries.append(
-                SeriesEntry(
-                    index=0,
-                    series_id=int(series.get("id")),
-                    title=str(series.get("title") or "<untitled>"),
-                    processed=processed,
-                    total=total,
-                    last_processed_at=last_ts,
-                    last_processed_at_iso=to_iso(last_ts, self.config.tz_zone),
-                    status=status,
-                )
-            )
+            snapshot = self._series_snapshot(series, processed_map)
+            entries.append(snapshot)
 
         status_rank = {"full": 0, "partial": 1, "none": 2}
         entries.sort(key=lambda item: (status_rank.get(item.status, 3), item.title.lower()))
@@ -305,9 +316,100 @@ class RestoreService:
             entry.index = idx
         return entries
 
-    def _restore_single_series(self, entry: SeriesEntry, processed_map: Dict[str, Optional[int]]) -> SeriesOutcome:
+    def _series_snapshot(self, series: dict, processed_map: Dict[str, Optional[int]]) -> SeriesEntry:
+        series_id = int(series.get("id"))
+        title = str(series.get("title") or "<untitled>")
+        episodes = self._fetch_episode_files(series_id)
+
+        total = 0
+        processed = 0
+        last_ts: Optional[int] = None
+        season_stats: Dict[int, Dict[str, Optional[int] | int]] = {}
+
+        for episode in episodes:
+            path = episode.get("path") or episode.get("relativePath")
+            if not path:
+                continue
+
+            translated = self._translate_path(path)
+            resolved = self._resolve_under_base(translated)
+            if resolved is None:
+                continue
+
+            abs_str = str(resolved)
+            ts = processed_map.get(abs_str)
+
+            total += 1
+            if ts is not None:
+                processed += 1
+                if ts and (last_ts or 0) < ts:
+                    last_ts = ts
+
+            season_number = int(episode.get("seasonNumber") or 0)
+            stats = season_stats.setdefault(season_number, {"total": 0, "processed": 0, "last": None})
+            stats["total"] = int(stats["total"]) + 1
+            if ts is not None:
+                stats["processed"] = int(stats["processed"]) + 1
+                if ts and (stats["last"] or 0) < ts:
+                    stats["last"] = ts
+
+        status = self._status_from_counts(processed, total)
+        seasons: List[SeasonEntry] = []
+        for number in sorted(season_stats):
+            stats = season_stats[number]
+            season_processed = int(stats["processed"])  # type: ignore[index]
+            season_total = int(stats["total"])  # type: ignore[index]
+            season_last_raw = stats["last"]  # type: ignore[index]
+            season_last = season_last_raw if isinstance(season_last_raw, int) else None
+            seasons.append(
+                SeasonEntry(
+                    number=number,
+                    name=self._season_label(number),
+                    processed=season_processed,
+                    total=season_total,
+                    status=self._status_from_counts(season_processed, season_total),
+                    last_processed_at=season_last,
+                    last_processed_at_iso=to_iso(season_last, self.config.tz_zone),
+                )
+            )
+
+        return SeriesEntry(
+            index=0,
+            series_id=series_id,
+            title=title,
+            processed=processed,
+            total=total,
+            status=status,
+            last_processed_at=last_ts,
+            last_processed_at_iso=to_iso(last_ts, self.config.tz_zone),
+            seasons=seasons,
+        )
+
+    @staticmethod
+    def _season_label(number: int) -> str:
+        if number == 0:
+            return "Specials"
+        return f"Season {number:02d}"
+
+    @staticmethod
+    def _status_from_counts(processed: int, total: int) -> str:
+        if total <= 0:
+            return "none"
+        if processed <= 0:
+            return "none"
+        if processed >= total:
+            return "full"
+        return "partial"
+
+    def _restore_single_series(
+        self,
+        entry: SeriesEntry,
+        processed_map: Dict[str, Optional[int]],
+        selected_seasons: Optional[Set[int]] = None,
+    ) -> SeriesOutcome:
         logger.info("Attempting restore for series '%s' (id=%s)", entry.title, entry.series_id)
-        outcome = SeriesOutcome(series_id=entry.series_id, title=entry.title)
+        seasons_list = sorted(selected_seasons) if selected_seasons else None
+        outcome = SeriesOutcome(series_id=entry.series_id, title=entry.title, selected_seasons=seasons_list)
         seen_paths: set[str] = set()
         episodes = self._fetch_episode_files(entry.series_id)
 
@@ -320,6 +422,10 @@ class RestoreService:
             resolved = self._resolve_under_base(translated)
             if resolved is None:
                 outcome.skipped_outside_library.append(str(translated))
+                continue
+
+            season_number = int(episode.get("seasonNumber") or 0)
+            if selected_seasons and season_number not in selected_seasons:
                 continue
 
             abs_str = str(resolved)
@@ -446,30 +552,6 @@ class RestoreService:
             if not candidate.exists():
                 return candidate
             counter += 1
-
-    def _series_status(self, series: dict, processed_map: Dict[str, Optional[int]]) -> Tuple[int, int, Optional[int]]:
-        series_id = int(series.get("id"))
-        episodes = self._fetch_episode_files(series_id)
-        processed = 0
-        total = 0
-        last_ts: Optional[int] = None
-
-        for episode in episodes:
-            path = episode.get("path") or episode.get("relativePath")
-            if not path:
-                continue
-            translated = self._translate_path(path)
-            resolved = self._resolve_under_base(translated)
-            if resolved is None:
-                continue
-            abs_str = str(resolved)
-            total += 1
-            ts = processed_map.get(abs_str)
-            if ts is not None:
-                processed += 1
-                if ts and (last_ts or 0) < ts:
-                    last_ts = ts
-        return processed, total, last_ts
 
     def _fetch_series_list(self) -> List[dict]:
         tag_id = self._find_tag_id()

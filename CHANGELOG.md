@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [2.0.2] - 2025-10-14
 ### Added
 - Password-protected “Restore Originals” workflow on the dashboard with modal series selection (supports ranges and comma lists) and detailed results.
+- Restore Originals modal now supports per-season targeting so you can roll back individual seasons without touching the rest of a series.
 - FastAPI `/restore/series` and `/restore/run` endpoints that validate the admin password, restore archived originals, archive transcoded files, and purge matching SQLite entries.
 
 ### Changed

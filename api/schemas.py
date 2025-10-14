@@ -36,6 +36,16 @@ class SyncTriggerResponse(BaseModel):
     running: bool
 
 
+class RestoreSeasonEntry(BaseModel):
+    number: int
+    name: str
+    processed: int = Field(..., ge=0)
+    total: int = Field(..., ge=0)
+    status: Literal["full", "partial", "none"]
+    last_processed_at: Optional[int] = None
+    last_processed_at_iso: Optional[str] = None
+
+
 class RestoreSeriesEntry(BaseModel):
     index: int = Field(..., ge=1)
     series_id: int = Field(..., ge=0)
@@ -45,20 +55,28 @@ class RestoreSeriesEntry(BaseModel):
     status: Literal["full", "partial", "none"]
     last_processed_at: Optional[int] = None
     last_processed_at_iso: Optional[str] = None
+    seasons: List[RestoreSeasonEntry] = Field(default_factory=list)
 
 
 class RestoreSeriesList(BaseModel):
     series: List[RestoreSeriesEntry] = Field(default_factory=list)
 
 
+class RestoreSelectionPayload(BaseModel):
+    series_id: int
+    seasons: Optional[List[int]] = None
+
+
 class RestoreRequest(BaseModel):
-    selection: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+    selection: Optional[str] = Field(default=None)
+    selections: Optional[List[RestoreSelectionPayload]] = None
 
 
 class RestoreSeriesResult(BaseModel):
     series_id: int
     title: str
+    selected_seasons: Optional[List[int]] = None
     restored: List[str] = Field(default_factory=list)
     archived_transcodes: List[str] = Field(default_factory=list)
     skipped_missing_db: List[str] = Field(default_factory=list)

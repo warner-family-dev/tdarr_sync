@@ -6,6 +6,15 @@ import { apiFetchJson } from "./apiClient";
 
 type SeriesStatus = "full" | "partial" | "none";
 
+type RestoreSeasonEntry = {
+  number: number;
+  name: string;
+  processed: number;
+  total: number;
+  status: SeriesStatus;
+  last_processed_at_iso: string | null;
+};
+
 type RestoreSeriesEntry = {
   index: number;
   series_id: number;
@@ -14,6 +23,7 @@ type RestoreSeriesEntry = {
   total: number;
   status: SeriesStatus;
   last_processed_at_iso: string | null;
+  seasons: RestoreSeasonEntry[];
 };
 
 type RestoreSummary = {
@@ -27,6 +37,7 @@ type RestoreSummary = {
 type RestoreSeriesResult = {
   series_id: number;
   title: string;
+  selected_seasons?: number[] | null;
   restored: string[];
   archived_transcodes: string[];
   skipped_missing_db: string[];
@@ -39,6 +50,11 @@ type RestoreResponse = {
   summary: RestoreSummary;
   results: RestoreSeriesResult[];
   messages: string[];
+};
+
+type SeriesSelectionState = {
+  allSeasons: boolean;
+  seasons: Set<number>;
 };
 
 function statusLabel(status: SeriesStatus): string {
@@ -75,8 +91,7 @@ export default function RestoreOriginalsControl() {
   const [series, setSeries] = useState<RestoreSeriesEntry[]>([]);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesError, setSeriesError] = useState<string | null>(null);
-
-  const [selection, setSelection] = useState("");
+  const [selectedSeries, setSelectedSeries] = useState<Map<number, SeriesSelectionState>>(new Map());
   const [password, setPassword] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -90,6 +105,19 @@ export default function RestoreOriginalsControl() {
         cache: "no-store",
       });
       setSeries(payload.series);
+      setSelectedSeries((prev) => {
+        if (prev.size === 0) {
+          return prev;
+        }
+        const validIds = new Set(payload.series.map((item) => item.series_id));
+        const next = new Map<number, SeriesSelectionState>();
+        prev.forEach((value, key) => {
+          if (validIds.has(key)) {
+            next.set(key, { allSeasons: value.allSeasons, seasons: new Set(value.seasons) });
+          }
+        });
+        return next;
+      });
     } catch (error) {
       setSeriesError(buildErrorMessage(error));
       setSeries([]);
@@ -116,13 +144,77 @@ export default function RestoreOriginalsControl() {
     setSubmitError(null);
     setSubmitting(false);
     setResult(null);
-    setSelection("");
+    setSelectedSeries(new Map());
     setPassword("");
   };
 
+  const toggleSeries = useCallback((seriesId: number, enabled: boolean) => {
+    setSelectedSeries((prev) => {
+      const next = new Map(prev);
+      if (enabled) {
+        next.set(seriesId, { allSeasons: true, seasons: new Set() });
+      } else {
+        next.delete(seriesId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllSeasons = useCallback((seriesId: number, enabled: boolean, seasonNumbers: number[]) => {
+    setSelectedSeries((prev) => {
+      const next = new Map(prev);
+      const current = next.get(seriesId);
+      if (!current) {
+        if (enabled) {
+          next.set(seriesId, { allSeasons: true, seasons: new Set() });
+        }
+        return next;
+      }
+      if (enabled) {
+        next.set(seriesId, { allSeasons: true, seasons: new Set() });
+      } else {
+        next.set(seriesId, { allSeasons: false, seasons: new Set(seasonNumbers) });
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSeason = useCallback((seriesId: number, seasonNumber: number, enabled: boolean) => {
+    setSelectedSeries((prev) => {
+      const next = new Map(prev);
+      const current = next.get(seriesId);
+      if (!current) {
+        if (enabled) {
+          next.set(seriesId, { allSeasons: false, seasons: new Set([seasonNumber]) });
+        }
+        return next;
+      }
+      const newSet = new Set(current.seasons);
+      if (enabled) {
+        newSet.add(seasonNumber);
+      } else {
+        newSet.delete(seasonNumber);
+      }
+      next.set(seriesId, { allSeasons: false, seasons: newSet });
+      return next;
+    });
+  }, []);
+
+  const hasValidSelection = useMemo(() => {
+    if (selectedSeries.size === 0) {
+      return false;
+    }
+    for (const entry of selectedSeries.values()) {
+      if (!entry.allSeasons && entry.seasons.size === 0) {
+        return false;
+      }
+    }
+    return true;
+  }, [selectedSeries]);
+
   const canSubmit = useMemo(() => {
-    return selection.trim().length > 0 && password.trim().length > 0 && !submitting;
-  }, [password, selection, submitting]);
+    return hasValidSelection && password.trim().length > 0 && !submitting;
+  }, [hasValidSelection, password, submitting]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,13 +224,25 @@ export default function RestoreOriginalsControl() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const selectionsPayload = Array.from(selectedSeries.entries()).map(([seriesId, state]) => ({
+        series_id: seriesId,
+        seasons: state.allSeasons ? null : Array.from(state.seasons).sort((a, b) => a - b),
+      }));
+
+      const invalid = selectionsPayload.some((item) => item.seasons !== null && item.seasons.length === 0);
+      if (invalid || selectionsPayload.length === 0) {
+        setSubmitError("Select at least one season for each chosen series.");
+        setSubmitting(false);
+        return;
+      }
+
       const payload = await apiFetchJson<RestoreResponse>("/restore/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selection: selection.trim(), password }),
+        body: JSON.stringify({ selections: selectionsPayload, password }),
       });
       setResult(payload);
-      setSelection("");
+      setSelectedSeries(new Map());
       setPassword("");
       await loadSeries();
       router.refresh();
@@ -179,8 +283,8 @@ export default function RestoreOriginalsControl() {
             </div>
 
             <p className="modal-intro">
-              Select the series to restore back to their original files. Provide selection indexes (e.g. <code>1,3,6</code>{" "}
-              or <code>1-4,6</code> or <code>all</code>) and the admin password. No Tdarr total scan will be triggered.
+              Select the series to restore and pick specific seasons (or leave <strong>All seasons</strong> enabled) before
+              running the restore. Provide the admin password to confirm. No Tdarr total scan will be triggered.
             </p>
 
             <div className="modal-section">
@@ -195,38 +299,75 @@ export default function RestoreOriginalsControl() {
               {!seriesLoading && !seriesError && series.length === 0 && <p className="muted">No series available.</p>}
               {!seriesLoading && !seriesError && series.length > 0 && (
                 <div className="series-list">
-                  {series.map((item) => (
-                    <div key={item.series_id} className="series-row">
-                      <span className="series-index">{item.index}.</span>
-                      <div className="series-info">
-                        <div className="series-title">
-                          <span className={statusBadgeClass(item.status)}>{statusLabel(item.status)}</span>
-                          <strong>{item.title}</strong>
-                        </div>
-                        <div className="series-meta">
-                          <span>
-                            {item.processed} / {item.total} processed
-                          </span>
-                          <span>{item.last_processed_at_iso ? `Last: ${item.last_processed_at_iso}` : "Never processed"}</span>
+                  {series.map((item) => {
+                    const selectionState = selectedSeries.get(item.series_id);
+                    const seasonNumbers = item.seasons.map((season) => season.number);
+                    return (
+                      <div key={item.series_id} className="series-row">
+                        <span className="series-index">{item.index}.</span>
+                        <div className="series-info">
+                          <div className="series-title">
+                            <span className={statusBadgeClass(item.status)}>{statusLabel(item.status)}</span>
+                            <strong>{item.title}</strong>
+                          </div>
+                          <div className="series-meta">
+                            <span>
+                              {item.processed} / {item.total} processed
+                            </span>
+                            <span>{item.last_processed_at_iso ? `Last: ${item.last_processed_at_iso}` : "Never processed"}</span>
+                          </div>
+                          <div className="series-controls">
+                            <label className="checkbox-inline">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectionState)}
+                                onChange={(event) => toggleSeries(item.series_id, event.target.checked)}
+                              />
+                              <span>Select series</span>
+                            </label>
+
+                            {selectionState && (
+                              <div className="season-list">
+                                <label className="checkbox-inline">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectionState.allSeasons}
+                                    onChange={(event) => toggleAllSeasons(item.series_id, event.target.checked, seasonNumbers)}
+                                  />
+                                  <span>All seasons</span>
+                                </label>
+                                <div className="season-checkboxes">
+                                  {item.seasons.length === 0 && <span className="muted">No seasons found.</span>}
+                                  {item.seasons.map((season) => (
+                                    <label key={season.number} className="checkbox-inline">
+                                      <input
+                                        type="checkbox"
+                                        checked={
+                                          selectionState.allSeasons || selectionState.seasons.has(season.number)
+                                        }
+                                        disabled={selectionState.allSeasons}
+                                        onChange={(event) => toggleSeason(item.series_id, season.number, event.target.checked)}
+                                      />
+                                      <span>
+                                        {season.name}
+                                        {" "}
+                                        ({season.processed}/{season.total})
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
             <form onSubmit={handleSubmit} className="restore-form">
-              <label className="form-field">
-                <span>Series selection</span>
-                <input
-                  type="text"
-                  value={selection}
-                  onChange={(event) => setSelection(event.target.value)}
-                  placeholder="e.g. 1-3,5 or all"
-                  autoFocus
-                />
-              </label>
               <label className="form-field">
                 <span>Admin password</span>
                 <input
@@ -234,6 +375,7 @@ export default function RestoreOriginalsControl() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter password"
+                  autoFocus
                 />
               </label>
               {submitError && <p className="error-text">{submitError}</p>}
@@ -268,6 +410,22 @@ export default function RestoreOriginalsControl() {
                   <details key={seriesResult.series_id} className="series-result">
                     <summary>{seriesResult.title}</summary>
                     <div className="series-result-body">
+                      <div>
+                        <strong>Target seasons:</strong>
+                        <span>
+                          {(() => {
+                            const seasons = seriesResult.selected_seasons;
+                            if (!seasons || seasons.length === 0) {
+                              return " All seasons";
+                            }
+                            return ` ${seasons
+                              .slice()
+                              .sort((a, b) => a - b)
+                              .map((value) => value.toString().padStart(2, "0"))
+                              .join(", ")}`;
+                          })()}
+                        </span>
+                      </div>
                       {seriesResult.restored.length > 0 && (
                         <div>
                           <strong>Restored:</strong>

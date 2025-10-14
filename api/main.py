@@ -175,6 +175,18 @@ def list_restore_series():
                 status=item.status,
                 last_processed_at=item.last_processed_at,
                 last_processed_at_iso=item.last_processed_at_iso,
+                seasons=[
+                    schemas.RestoreSeasonEntry(
+                        number=season.number,
+                        name=season.name,
+                        processed=season.processed,
+                        total=season.total,
+                        status=season.status,
+                        last_processed_at=season.last_processed_at,
+                        last_processed_at_iso=season.last_processed_at_iso,
+                    )
+                    for season in item.seasons
+                ],
             )
             for item in entries
         ]
@@ -190,8 +202,16 @@ def run_restore(payload: schemas.RestoreRequest):
     if status.get("running"):
         raise HTTPException(status_code=409, detail="Sync is currently running; wait for it to finish.")
 
+    structured = None
+    if payload.selections:
+        structured = [{"series_id": item.series_id, "seasons": item.seasons} for item in payload.selections]
+
     try:
-        outcome = restore_service.restore(payload.selection, payload.password)
+        outcome = restore_service.restore(
+            password=payload.password,
+            selection_expr=payload.selection,
+            structured=structured,
+        )
     except RestoreAuthError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RestoreSelectionError as exc:
@@ -212,6 +232,7 @@ def run_restore(payload: schemas.RestoreRequest):
         schemas.RestoreSeriesResult(
             series_id=result.series_id,
             title=result.title,
+            selected_seasons=result.selected_seasons,
             restored=result.restored,
             archived_transcodes=result.archived_transcodes,
             skipped_missing_db=result.skipped_missing_db,

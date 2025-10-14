@@ -53,7 +53,7 @@ services:
     env_file:
       - .env
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
+      NEXT_BACKEND_ORIGIN: ${NEXT_BACKEND_ORIGIN:-http://api:8000}
       TZ: ${TZ}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
