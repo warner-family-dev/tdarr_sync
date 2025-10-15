@@ -98,7 +98,15 @@ export default function RestoreOriginalsControl() {
   const [result, setResult] = useState<RestoreResponse | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
   useEffect(() => {
-    setRequestId(crypto.randomUUID());
+    try {
+      if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        setRequestId(crypto.randomUUID());
+      } else {
+        setRequestId(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      }
+    } catch {
+      setRequestId(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    }
   }, []);
 
   const loadSeries = useCallback(async () => {
@@ -240,7 +248,14 @@ export default function RestoreOriginalsControl() {
         return;
       }
 
-      const correlationId = crypto.randomUUID();
+      const correlationId = (() => {
+        try {
+          if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+            return crypto.randomUUID();
+          }
+        } catch {}
+        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      })();
       setRequestId(correlationId);
       const payload = await apiFetchJson<RestoreResponse>("/restore/run", {
         method: "POST",
