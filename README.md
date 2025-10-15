@@ -70,7 +70,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 
 | Variable | Description |
 | --- | --- |
-| `HOST_LIBRARY_MOUNT` | Read-only mount of your Sonarr-managed library (source files). |
+| `HOST_LIBRARY_MOUNT` | Writable mount of your Sonarr-managed library (original media). Tdarr Sync needs write access to archive/restore files. |
 | `HOST_TDARR_INPUT` | Writable mount where Tdarr watches for incoming jobs. |
 | `HOST_TDARR_OUTPUT` | Writable mount where Tdarr drops transcoded outputs. |
 | `HOST_ARCHIVE_DIR` | (Optional) Writable mount used when `MOVE_ORIGINAL_FILES=true`. |
@@ -82,7 +82,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `TZ` — propagated to all containers; controls timestamps and log formatting.
 - `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
 - `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
-- `NEXT_PUBLIC_API_BASE_URL` — URL the web client uses to talk to the API (`http://api:8000` in docker).
+- `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
 - Sonarr/Tdarr paths mirror the original script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, etc.).
 
 ### Worker cadence and behaviour
@@ -105,7 +105,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Mirrors the look-and-feel of `whiskey_db`: dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
 - Provides a manual trigger form (optionally as a dry run) — implemented via Next server actions that call the API.
-- Reads configuration from `NEXT_PUBLIC_API_BASE_URL`. In Docker this points at the internal `api` service; if running locally you can set it to `http://localhost:8000`.
+- Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.
 
 ---
 
@@ -135,6 +135,7 @@ Under the hood the worker still drives `tdarr_sync.py`, so all original guarante
 - **Retention:** after each restore the sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (when enabled) and only inside the archive tree.
 - **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
 - **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
+- When `SYNC_INTERVAL_SECONDS <= 0`, the container boots once, logs the skip, and stays stopped (restart policy is `on-failure`) so the stack only runs on manual triggers.
 
 ---
 
@@ -218,6 +219,15 @@ MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
 
 - Archived files have their mtime updated to “now” so retention windows start when the file was replaced.
 - The sweeper removes files ending with `BACKUP_SUFFIX` inside `MOVE_ORIGINAL_FILES_DEST` once they exceed `DELETE_ORIGINAL_FILES_DAYS` (set `0` to delete immediately).
+
+---
+
+## Restore Dashboard Workflow
+
+- Submitting the **Restore Originals** modal now schedules a background restore job. The UI shows the job id and live status until it completes.
+- When the job finishes successfully the modal populates the restore summary; failures surface the error and keep processed markers intact so you can retry.
+- Poll job state directly via the API: `GET /restore/jobs/<job_id>` returns `pending`, `running`, `succeeded`, or `failed` together with the final payload.
+- Need a blocking call? Pass `wait_for_completion=true` in the JSON body for `/restore/run` to wait for completion (useful for CLI automation).
 
 ---
 

@@ -71,6 +71,9 @@ class Settings:
                 "output_dir": os.getenv("TDARR_OUTPUT_DIR", ""),
                 "archive_dir": os.getenv("MOVE_ORIGINAL_FILES_DEST", ""),
             },
+            "restore": {
+                "password_configured": bool(os.getenv("RESTORE_ADMIN_PASSWORD")),
+            },
             "telegram_enabled": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
         }
 

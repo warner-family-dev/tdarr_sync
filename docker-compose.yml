@@ -11,13 +11,13 @@ services:
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library:ro
+      - ${HOST_LIBRARY_MOUNT}:/media/library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
       - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
-    restart: unless-stopped
+    restart: on-failure
 
   api:
     build:
@@ -33,7 +33,7 @@ services:
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
       SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library:ro
+      - ${HOST_LIBRARY_MOUNT}:/media/library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
@@ -53,7 +53,7 @@ services:
     env_file:
       - .env
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
+      NEXT_BACKEND_ORIGIN: ${NEXT_BACKEND_ORIGIN:-http://api:8000}
       TZ: ${TZ}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
