@@ -52,6 +52,23 @@ type RestoreResponse = {
   messages: string[];
 };
 
+type RestoreTriggerResponse = {
+  job_id: string;
+  request_id: string;
+  status: "submitted" | "pending" | "running";
+};
+
+type RestoreJobStatus = {
+  job_id: string;
+  request_id: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  created_at: number;
+  started_at?: number | null;
+  finished_at?: number | null;
+  result?: RestoreResponse | null;
+  error?: string | null;
+};
+
 type SeriesSelectionState = {
   allSeasons: boolean;
   seasons: Set<number>;
@@ -97,6 +114,8 @@ export default function RestoreOriginalsControl() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RestoreResponse | null>(null);
   const [requestId, setRequestId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<RestoreJobStatus | null>(null);
   useEffect(() => {
     try {
       if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -145,10 +164,66 @@ export default function RestoreOriginalsControl() {
     loadSeries();
   }, [open, loadSeries]);
 
+  useEffect(() => {
+    if (!activeJobId) {
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = async () => {
+      try {
+        const status = await apiFetchJson<RestoreJobStatus>(`/restore/jobs/${activeJobId}`, { cache: "no-store" });
+        if (cancelled) {
+          return;
+        }
+        setJobStatus(status);
+        if (status.status === "succeeded") {
+          setResult(status.result ?? null);
+          setSubmitError(null);
+          setActiveJobId(null);
+          setJobStatus(null);
+          setSubmitting(false);
+          setSelectedSeries(new Map());
+          setPassword("");
+          await loadSeries();
+          router.refresh();
+          return;
+        }
+        if (status.status === "failed") {
+          setSubmitError(status.error || "Restore failed. Check logs for details.");
+          setResult(null);
+          setActiveJobId(null);
+          setJobStatus(null);
+          setSubmitting(false);
+          return;
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSubmitError(buildErrorMessage(error));
+          setActiveJobId(null);
+          setSubmitting(false);
+        }
+        return;
+      }
+      timer = setTimeout(poll, 3000);
+    };
+
+    poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [activeJobId, loadSeries, router]);
+
   const handleOpen = () => {
     setOpen(true);
     setSubmitError(null);
     setResult(null);
+    setJobStatus(null);
   };
 
   const handleClose = () => {
@@ -158,6 +233,8 @@ export default function RestoreOriginalsControl() {
     setResult(null);
     setSelectedSeries(new Map());
     setPassword("");
+    setActiveJobId(null);
+    setJobStatus(null);
   };
 
   const toggleSeries = useCallback((seriesId: number, enabled: boolean) => {
@@ -225,8 +302,8 @@ export default function RestoreOriginalsControl() {
   }, [selectedSeries]);
 
   const canSubmit = useMemo(() => {
-    return hasValidSelection && password.trim().length > 0 && !submitting;
-  }, [hasValidSelection, password, submitting]);
+    return hasValidSelection && password.trim().length > 0 && !submitting && !activeJobId;
+  }, [hasValidSelection, password, submitting, activeJobId]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -235,6 +312,7 @@ export default function RestoreOriginalsControl() {
     }
     setSubmitting(true);
     setSubmitError(null);
+    let jobStarted = false;
     try {
       const selectionsPayload = Array.from(selectedSeries.entries()).map(([seriesId, state]) => ({
         series_id: seriesId,
@@ -257,21 +335,30 @@ export default function RestoreOriginalsControl() {
         return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       })();
       setRequestId(correlationId);
-      const payload = await apiFetchJson<RestoreResponse>("/restore/run", {
+      const response = await apiFetchJson<RestoreResponse | RestoreTriggerResponse>("/restore/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selections: selectionsPayload, password, request_id: correlationId }),
       });
-      setResult(payload);
-      setSelectedSeries(new Map());
-      setPassword("");
-      await loadSeries();
-      router.refresh();
+      if ("summary" in response) {
+        setResult(response);
+        setSelectedSeries(new Map());
+        setPassword("");
+        await loadSeries();
+        router.refresh();
+      } else {
+        jobStarted = true;
+        setResult(null);
+        setActiveJobId(response.job_id);
+        setJobStatus(null);
+      }
     } catch (error) {
       setSubmitError(buildErrorMessage(error));
       setResult(null);
     } finally {
-      setSubmitting(false);
+      if (!jobStarted) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -307,6 +394,15 @@ export default function RestoreOriginalsControl() {
               Select the series to restore and pick specific seasons (or leave <strong>All seasons</strong> enabled) before
               running the restore. Provide the admin password to confirm. No Tdarr total scan will be triggered.
             </p>
+
+            {activeJobId && (
+              <div className="alert info">
+                <p>
+                  Restore job <code>{activeJobId.slice(0, 8)}</code> is{" "}
+                  <strong>{jobStatus?.status ?? "pending"}</strong>. This window will update automatically when it finishes.
+                </p>
+              </div>
+            )}
 
             <div className="modal-section">
               <div className="modal-section-header">

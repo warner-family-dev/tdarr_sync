@@ -72,6 +72,9 @@ class RestoreRequest(BaseModel):
     selection: Optional[str] = Field(default=None)
     selections: Optional[List[RestoreSelectionPayload]] = None
     request_id: Optional[str] = Field(default=None, description="Client correlation id for logging")
+    wait_for_completion: bool = Field(
+        default=False, description="If true, wait for the restore to finish before responding."
+    )
 
 
 class RestoreSeriesResult(BaseModel):
@@ -98,6 +101,28 @@ class RestoreResponse(BaseModel):
     summary: RestoreSummary
     results: List[RestoreSeriesResult] = Field(default_factory=list)
     messages: List[str] = Field(default_factory=list)
+
+
+class RestoreTriggerResponse(BaseModel):
+    job_id: str
+    request_id: str
+    status: Literal["submitted", "pending", "running"] = "submitted"
+
+
+class RestoreJobStatus(BaseModel):
+    job_id: str
+    request_id: str
+    status: Literal["pending", "running", "succeeded", "failed"]
+    created_at: int
+    started_at: Optional[int] = None
+    finished_at: Optional[int] = None
+    result: Optional["RestoreResponse"] = None
+    error: Optional[str] = None
+
+
+RestoreRunResponse = RestoreResponse | RestoreTriggerResponse
+
+RestoreJobStatus.model_rebuild()
 
 
 def to_iso(timestamp: Optional[int], tz) -> Optional[str]:

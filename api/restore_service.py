@@ -170,9 +170,10 @@ class RestoreService:
         except KeyError as exc:
             raise RestoreConfigurationError(f"Missing required environment variable: {exc}") from exc
 
-        archive_dir = Path(os.getenv("MOVE_ORIGINAL_FILES_DEST", "/media/archive"))
+        # Match tdarr_sync.py defaults so both services look in the same place when env vars are unset.
+        archive_dir = Path(os.getenv("MOVE_ORIGINAL_FILES_DEST", "/mnt/originals_archive"))
         backup_suffix = os.getenv("BACKUP_SUFFIX", ".orig")
-        move_originals = _bool_env("MOVE_ORIGINAL_FILES", True)
+        move_originals = _bool_env("MOVE_ORIGINAL_FILES", False)
         rename_originals = _bool_env("RENAME_ORIGINAL_FILES", True)
         tdarr_output_dir = Path(os.getenv("TDARR_OUTPUT_DIR", "/media/tdarr/output"))
         sonarr_tag_name = os.getenv("SONARR_TAG_NAME") or None
@@ -223,12 +224,38 @@ class RestoreService:
 
         processed_map = self._load_processed_map()
         series_list = self._fetch_series_list()
-        entries = self._build_entries(series_list, processed_map)
-        entry_by_id = {entry.series_id: entry for entry in entries}
-
+        logger.info("Restore catalog loaded: %d series retrieved from Sonarr.", len(series_list))
         selected: List[Tuple[SeriesEntry, Optional[Set[int]]]] = []
 
+        episode_lookup: Dict[int, List[dict]] = {}
+
         if structured:
+            logger.info("Structured restore requested for %d payload entries.", len(structured))
+            series_lookup: Dict[int, dict] = {}
+            for item in series_list:
+                try:
+                    series_lookup[int(item.get("id"))] = item
+                except (TypeError, ValueError):
+                    continue
+
+            entry_cache: Dict[int, SeriesEntry] = {}
+            episodes_cache: Dict[int, List[dict]] = {}
+
+            def get_entry(series_id: int) -> SeriesEntry:
+                entry = entry_cache.get(series_id)
+                if entry:
+                    return entry
+                series_raw = series_lookup.get(series_id)
+                if series_raw is None:
+                    raise RestoreNotFoundError(f"Series id {series_id} not found in the current catalog.")
+                logger.info("Fetching episode data for series_id=%s title='%s'.", series_id, series_raw.get("title"))
+                episodes = self._fetch_episode_files(series_id)
+                episodes_cache[series_id] = episodes
+                logger.info("Retrieved %d episode files for series_id=%s.", len(episodes), series_id)
+                snapshot = self._series_snapshot(series_raw, processed_map, preloaded_episodes=episodes)
+                entry_cache[series_id] = snapshot
+                return snapshot
+
             if not isinstance(structured, list) or len(structured) == 0:
                 raise RestoreSelectionError("Structured selection must include at least one series.")
             for item in structured:
@@ -239,9 +266,7 @@ class RestoreService:
                     series_id = int(series_id_raw)
                 except (TypeError, ValueError) as exc:
                     raise RestoreSelectionError(f"Invalid series_id value: {series_id_raw}") from exc
-                entry = entry_by_id.get(series_id)
-                if entry is None:
-                    raise RestoreNotFoundError(f"Series id {series_id} not found in the current catalog.")
+                entry = get_entry(series_id)
 
                 seasons_raw = item.get("seasons")
                 if not seasons_raw:
@@ -260,16 +285,20 @@ class RestoreService:
                         f"Series '{entry.title}' does not contain seasons: {sorted(invalid)}"
                     )
                 selected.append((entry, requested_seasons))
+            episode_lookup = episodes_cache
         else:
+            entries = self._build_entries(series_list, processed_map)
             indexes = parse_selection(selection_expr or "", len(entries))
             if not indexes:
                 raise RestoreSelectionError("No series matched the selection.")
             selected = [(entries[idx - 1], None) for idx in indexes]
+            episode_lookup = {}
 
         logger.info(
-            "Restore starting (request_id=%s) selections=%d",
+            "Restore starting (request_id=%s) payload_entries=%d selected_series=%d",
             getattr(self, "_current_request_id", "n/a"),
             len(structured or []),
+            len(selected),
         )
         outcomes: List[SeriesOutcome] = []
         total_restored = 0
@@ -287,7 +316,12 @@ class RestoreService:
                     sorted(seasons) if seasons else "all",
                 )
                 series_started = time.monotonic()
-                series_outcome = self._restore_single_series(entry, processed_map, seasons)
+                series_outcome = self._restore_single_series(
+                    entry,
+                    processed_map,
+                    seasons,
+                    preloaded_episodes=episode_lookup.get(entry.series_id),
+                )
                 logger.info(
                     "Restore finished for series '%s' (id=%s) restored=%d errors=%d duration=%.2fs",
                     entry.title,
@@ -379,10 +413,15 @@ class RestoreService:
             entry.index = idx
         return entries
 
-    def _series_snapshot(self, series: dict, processed_map: Dict[str, Optional[int]]) -> SeriesEntry:
+    def _series_snapshot(
+        self,
+        series: dict,
+        processed_map: Dict[str, Optional[int]],
+        preloaded_episodes: Optional[List[dict]] = None,
+    ) -> SeriesEntry:
         series_id = int(series.get("id"))
         title = str(series.get("title") or "<untitled>")
-        episodes = self._fetch_episode_files(series_id)
+        episodes = preloaded_episodes if preloaded_episodes is not None else self._fetch_episode_files(series_id)
 
         total = 0
         processed = 0
@@ -481,12 +520,20 @@ class RestoreService:
         entry: SeriesEntry,
         processed_map: Dict[str, Optional[int]],
         selected_seasons: Optional[Set[int]] = None,
+        *,
+        preloaded_episodes: Optional[List[dict]] = None,
     ) -> SeriesOutcome:
         logger.info("Attempting restore for series '%s' (id=%s)", entry.title, entry.series_id)
         seasons_list = sorted(selected_seasons) if selected_seasons else None
         outcome = SeriesOutcome(series_id=entry.series_id, title=entry.title, selected_seasons=seasons_list)
         seen_paths: set[str] = set()
-        episodes = self._fetch_episode_files(entry.series_id)
+        episodes = preloaded_episodes if preloaded_episodes is not None else self._fetch_episode_files(entry.series_id)
+        logger.info(
+            "Processing %d episode file records for series '%s' (id=%s)",
+            len(episodes),
+            entry.title,
+            entry.series_id,
+        )
 
         for episode in episodes:
             if not isinstance(episode, dict):

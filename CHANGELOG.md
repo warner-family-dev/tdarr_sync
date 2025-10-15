@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - `.env.example` advertises the required `RESTORE_ADMIN_PASSWORD` variable for enabling the restore feature.
 - Dashboard API calls now flow through a Next.js rewrite (`/tdarr-api/*`) so browsers can reach the FastAPI service without hard-coding container hostnames.
 - Restore modal shows a live in-progress bar while a restore job is running so users have visible feedback during longer operations.
+- `/restore/run` now accepts async submissions by default, returning a job id while the restore executes in the background; use the new `/restore/jobs/{job_id}` endpoint to poll status.
+- Dashboard restore workflow polls job status and surfaces success/failure without relying on the Next.js proxy timeout, so long-running restores finish reliably.
+- Restore API emits detailed job lifecycle logging (start, completion, failures) to help diagnose future issues.
 - Hardened restore endpoint to tolerate Sonarr episode payloads without `seasonNumber` so season-level restores no longer crash the API.
 - Restore process now leaves SQLite markers intact whenever any series reports errors, preventing accidental data loss on partial failures.
 - Additional guards ensure malformed Sonarr episode entries and unexpected per-series exceptions no longer crash restores; failures are surfaced in the response instead of dropping the API connection.
