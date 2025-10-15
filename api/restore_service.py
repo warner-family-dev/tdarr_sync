@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -265,15 +266,36 @@ class RestoreService:
                 raise RestoreSelectionError("No series matched the selection.")
             selected = [(entries[idx - 1], None) for idx in indexes]
 
+        logger.info(
+            "Restore starting with %d selection(s); password provided=%s",
+            len(structured or []),
+            bool(password),
+        )
         outcomes: List[SeriesOutcome] = []
         total_restored = 0
         total_missing_db = 0
         total_missing_archive = 0
         any_errors = False
+        restore_started = time.monotonic()
 
         for entry, seasons in selected:
             try:
+                logger.info(
+                    "Restore starting for series '%s' (id=%s) seasons=%s",
+                    entry.title,
+                    entry.series_id,
+                    sorted(seasons) if seasons else "all",
+                )
+                series_started = time.monotonic()
                 series_outcome = self._restore_single_series(entry, processed_map, seasons)
+                logger.info(
+                    "Restore finished for series '%s' (id=%s) restored=%d errors=%d duration=%.2fs",
+                    entry.title,
+                    entry.series_id,
+                    len(series_outcome.restored),
+                    len(series_outcome.errors),
+                    time.monotonic() - series_started,
+                )
             except RestoreError as exc:
                 logger.error("Restore failed for series '%s' (id=%s): %s", entry.title, entry.series_id, exc)
                 series_outcome = SeriesOutcome(
@@ -324,6 +346,16 @@ class RestoreService:
             messages.append(
                 "One or more series reported errors; processed markers were left intact so you can retry the restore."
             )
+
+        duration = time.monotonic() - restore_started
+        logger.info(
+            "Restore completed in %.2fs: series_requested=%d series_processed=%d files_restored=%d errors=%s",
+            duration,
+            len(selected),
+            sum(1 for o in outcomes if o.restored),
+            total_restored,
+            any_errors,
+        )
 
         return RestoreOutcome(
             series_requested=len(selected),
