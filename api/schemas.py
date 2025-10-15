@@ -71,6 +71,7 @@ class RestoreRequest(BaseModel):
     password: str = Field(..., min_length=1)
     selection: Optional[str] = Field(default=None)
     selections: Optional[List[RestoreSelectionPayload]] = None
+    request_id: Optional[str] = Field(default=None, description="Client correlation id for logging")
 
 
 class RestoreSeriesResult(BaseModel):

@@ -96,6 +96,10 @@ export default function RestoreOriginalsControl() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RestoreResponse | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  useEffect(() => {
+    setRequestId(crypto.randomUUID());
+  }, []);
 
   const loadSeries = useCallback(async () => {
     setSeriesLoading(true);
@@ -236,10 +240,12 @@ export default function RestoreOriginalsControl() {
         return;
       }
 
+      const correlationId = crypto.randomUUID();
+      setRequestId(correlationId);
       const payload = await apiFetchJson<RestoreResponse>("/restore/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selections: selectionsPayload, password }),
+        body: JSON.stringify({ selections: selectionsPayload, password, request_id: correlationId }),
       });
       setResult(payload);
       setSelectedSeries(new Map());

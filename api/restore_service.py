@@ -267,9 +267,9 @@ class RestoreService:
             selected = [(entries[idx - 1], None) for idx in indexes]
 
         logger.info(
-            "Restore starting with %d selection(s); password provided=%s",
+            "Restore starting (request_id=%s) selections=%d",
+            getattr(self, "_current_request_id", "n/a"),
             len(structured or []),
-            bool(password),
         )
         outcomes: List[SeriesOutcome] = []
         total_restored = 0

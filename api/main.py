@@ -202,8 +202,10 @@ def run_restore(payload: schemas.RestoreRequest):
     if status.get("running"):
         raise HTTPException(status_code=409, detail="Sync is currently running; wait for it to finish.")
 
+    request_id = payload.request_id or str(uuid.uuid4())
     logger.info(
-        "Restore request received: selection=%s structured=%s",
+        "Restore request received (request_id=%s): selection=%s structured=%s",
+        request_id,
         payload.selection,
         len(payload.selections or []),
     )
@@ -213,11 +215,13 @@ def run_restore(payload: schemas.RestoreRequest):
         structured = [{"series_id": item.series_id, "seasons": item.seasons} for item in payload.selections]
 
     try:
+        restore_service._current_request_id = request_id  # type: ignore[attr-defined]
         outcome = restore_service.restore(
             password=payload.password,
             selection_expr=payload.selection,
             structured=structured,
         )
+        restore_service._current_request_id = None  # type: ignore[attr-defined]
     except RestoreAuthError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RestoreSelectionError as exc:
