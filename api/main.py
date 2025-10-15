@@ -202,6 +202,12 @@ def run_restore(payload: schemas.RestoreRequest):
     if status.get("running"):
         raise HTTPException(status_code=409, detail="Sync is currently running; wait for it to finish.")
 
+    logger.info(
+        "Restore request received: selection=%s structured=%s",
+        payload.selection,
+        len(payload.selections or []),
+    )
+
     structured = None
     if payload.selections:
         structured = [{"series_id": item.series_id, "seasons": item.seasons} for item in payload.selections]
