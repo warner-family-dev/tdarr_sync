@@ -58,7 +58,7 @@ Shared volumes:
    docker compose logs -f api
    ```
 
-The worker launches an initial sync (respecting `SYNC_DRY_RUN`) and then loops every `SYNC_INTERVAL_SECONDS`. Use the dashboard’s “Trigger Sync” button for an on-demand run or hit `POST /sync/run` directly.
+The worker launches an initial sync (respecting `SYNC_DRY_RUN`) and then loops every `SYNC_INTERVAL_SECONDS`. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
 
 ---
 
@@ -104,7 +104,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Built with Next.js 14 + React 18.
 - Mirrors the look-and-feel of `whiskey_db`: dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
-- Provides a manual trigger form (optionally as a dry run) — implemented via Next server actions that call the API.
+- Provides a manual trigger form with dry-run and per-series/season selection options — the UI calls the API directly.
 - Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.
 
 ---
@@ -120,7 +120,21 @@ All endpoints return JSON.
 | `/processed-files?limit=50&offset=0` | GET | Recent processed files ordered by newest first. |
 | `/metrics/summary` | GET | Aggregate counts and database metadata. |
 | `/sync/status` | GET | Current/manual sync status (running flag, timestamps, last exit code). |
-| `/sync/run?dry_run=true` | POST | Trigger an immediate sync (optionally dry run). Returns `409` if a run is already in-flight. |
+| `/sync/run?dry_run=true` | POST | Trigger an immediate sync. Accepts `dry_run` via query or JSON body and supports structured selections (see below). Returns `409` if a run is already in-flight. |
+
+**Selection payload:** send `POST /sync/run` with a JSON body like:
+
+```json
+{
+  "dry_run": false,
+  "selections": [
+    { "series_id": 1234, "seasons": [1, 2] },
+    { "series_id": 5678 }
+  ]
+}
+```
+
+A missing `seasons` field (or `null`) means “all seasons” for that series.
 
 The API shares the same `/data` and `/logs` volumes as the worker so you can inspect state via HTTP without accessing the host filesystem.
 
@@ -135,6 +149,7 @@ Under the hood the worker still drives `tdarr_sync.py`, so all original guarante
 - **Retention:** after each restore the sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (when enabled) and only inside the archive tree.
 - **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
 - **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
+- **Targeted runs:** setting the `TDARR_SYNC_SELECTION` environment variable to the same JSON structure the API accepts limits the copy phase to the chosen series/seasons (used by the dashboard’s Select mode).
 - When `SYNC_INTERVAL_SECONDS <= 0`, the container boots once, logs the skip, and stays stopped (restart policy is `on-failure`) so the stack only runs on manual triggers.
 
 ---

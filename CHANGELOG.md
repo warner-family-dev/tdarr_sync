@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Added
+- Dashboard trigger form now includes a **Select** toggle that opens a modal for choosing series/seasons before starting a sync.
+- `/sync/run` accepts structured selection payloads and passes them to the worker via the new `TDARR_SYNC_SELECTION` environment hook.
+
+### Changed
+- Manual sync trigger on the dashboard calls the API directly and surfaces inline success/error feedback instead of relying on a server action.
+
+---
+
 ## [2.0.2] - 2025-10-14
 ### Added
 - Password-protected “Restore Originals” workflow on the dashboard with modal series selection (supports ranges and comma lists) and detailed results.
