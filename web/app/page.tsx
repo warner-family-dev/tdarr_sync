@@ -1,5 +1,7 @@
 import AutoRefresh from "./AutoRefresh";
+import RestoreOriginals from "./RestoreOriginals";
 import { triggerSyncAction } from "./actions";
+import { apiFetchJson } from "./apiClient";
 
 type ProcessedFile = {
   file_path: string;
@@ -27,22 +29,50 @@ type SyncStatus = {
   last_error: string | null;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const DISPLAY_TIMEZONE = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+const timestampFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: DISPLAY_TIMEZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true,
+});
+
+function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) {
+    return "—";
   }
-  return res.json();
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+
+  const parts = timestampFormatter.formatToParts(date);
+  const map = new Map(parts.map(({ type, value }) => [type, value]));
+  const year = map.get("year");
+  const month = map.get("month");
+  const day = map.get("day");
+  const hour = map.get("hour");
+  const minute = map.get("minute");
+  const dayPeriod = (map.get("dayPeriod") ?? "").replace(".", "").toUpperCase();
+
+  if (!year || !month || !day || !hour || !minute || !dayPeriod) {
+    return timestampFormatter.format(date);
+  }
+
+  return `${year}-${month}-${day}  ${hour}:${minute}${dayPeriod}`;
 }
 
 async function loadDashboardData() {
   try {
     const [summary, files, status] = await Promise.all([
-      fetchJson<Summary>("/metrics/summary"),
-      fetchJson<ProcessedFile[]>("/processed-files?limit=25"),
-      fetchJson<SyncStatus>("/sync/status"),
+      apiFetchJson<Summary>("/metrics/summary", { cache: "no-store" }),
+      apiFetchJson<ProcessedFile[]>("/processed-files?limit=25", { cache: "no-store" }),
+      apiFetchJson<SyncStatus>("/sync/status", { cache: "no-store" }),
     ]);
     return { summary, files, status, error: null as string | null };
   } catch (error: unknown) {
@@ -83,11 +113,11 @@ export default async function DashboardPage() {
             </span>
             <span>
               Last Run:
-              <strong>{status?.last_started_at_iso ?? "—"}</strong>
+              <strong>{formatTimestamp(status?.last_started_at_iso)}</strong>
             </span>
             <span>
               Finished:
-              <strong>{status?.last_finished_at_iso ?? "—"}</strong>
+              <strong>{formatTimestamp(status?.last_finished_at_iso)}</strong>
             </span>
             <span>
               Exit Code:
@@ -109,6 +139,9 @@ export default async function DashboardPage() {
               Dry run
             </label>
           </form>
+          <div className="restore-launch">
+            <RestoreOriginals />
+          </div>
         </article>
 
         <article className="card">
@@ -120,11 +153,11 @@ export default async function DashboardPage() {
             </span>
             <span>
               Last processed:
-              <strong>{summary?.last_processed_at_iso ?? "—"}</strong>
+              <strong>{formatTimestamp(summary?.last_processed_at_iso)}</strong>
             </span>
             <span>
               Earliest processed:
-              <strong>{summary?.earliest_processed_at_iso ?? "—"}</strong>
+              <strong>{formatTimestamp(summary?.earliest_processed_at_iso)}</strong>
             </span>
             <span>
               DB size:
@@ -132,7 +165,7 @@ export default async function DashboardPage() {
             </span>
             <span>
               DB updated:
-              <strong>{summary?.database_last_modified_iso ?? "—"}</strong>
+              <strong>{formatTimestamp(summary?.database_last_modified_iso)}</strong>
             </span>
           </div>
         </article>
@@ -157,7 +190,7 @@ export default async function DashboardPage() {
               {files.map((file) => (
                 <tr key={`${file.file_path}-${file.processed_at}`}>
                   <td>{file.file_path}</td>
-                  <td>{file.processed_at_iso ?? "—"}</td>
+                  <td>{formatTimestamp(file.processed_at_iso)}</td>
                 </tr>
               ))}
             </tbody>
