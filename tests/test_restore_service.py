@@ -166,6 +166,32 @@ class RestoreServiceAuthTests(unittest.TestCase):
             service.restore(password="secret", structured=[{"series_id": 7, "seasons": None}])
             mock_delete.assert_called_once()
 
+    def test_restore_handles_unexpected_exception(self):
+        with patch.object(RestoreService, "_load_config", return_value=self.config):
+            service = RestoreService()
+
+        entry = SeriesEntry(
+            index=1,
+            series_id=55,
+            title="Boom",
+            processed=0,
+            total=0,
+            status="none",
+            last_processed_at=None,
+            last_processed_at_iso=None,
+            seasons=[],
+        )
+
+        with patch.object(service, "_load_processed_map", return_value={}), patch.object(
+            service, "_fetch_series_list", return_value=[{"id": 55, "title": "Boom"}]
+        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
+            service, "_restore_single_series", side_effect=RuntimeError("boom")
+        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+            outcome = service.restore(password="secret", structured=[{"series_id": 55, "seasons": None}])
+            mock_delete.assert_not_called()
+            self.assertTrue(outcome.results)
+            self.assertTrue(outcome.results[0].errors)
+
 
 if __name__ == "__main__":
     unittest.main()

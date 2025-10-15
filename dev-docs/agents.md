@@ -9,3 +9,4 @@
 - Added indeterminate progress bar in modal so users can see ongoing restore activity; check for animation and messaging after rebuilding the web bundle.
 - Guarded against Sonarr episodes missing `seasonNumber`; `_episode_season_number` now defaults to 0 so restore API stays stable.
 - Added logic to skip deleting processed markers when any restore errors occur; verify DB entries remain for reruns if failures are reported.
+- Wrapped per-series restore execution in try/except so unexpected exceptions bubble up as user-visible errors rather than breaking the connection.

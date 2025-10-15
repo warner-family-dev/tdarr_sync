@@ -272,7 +272,26 @@ class RestoreService:
         any_errors = False
 
         for entry, seasons in selected:
-            series_outcome = self._restore_single_series(entry, processed_map, seasons)
+            try:
+                series_outcome = self._restore_single_series(entry, processed_map, seasons)
+            except RestoreError as exc:
+                logger.error("Restore failed for series '%s' (id=%s): %s", entry.title, entry.series_id, exc)
+                series_outcome = SeriesOutcome(
+                    series_id=entry.series_id,
+                    title=entry.title,
+                    selected_seasons=sorted(seasons) if seasons else None,
+                    errors=[str(exc)],
+                )
+                any_errors = True
+            except Exception as exc:  # pragma: no cover
+                logger.exception("Unexpected error restoring series '%s' (id=%s)", entry.title, entry.series_id)
+                series_outcome = SeriesOutcome(
+                    series_id=entry.series_id,
+                    title=entry.title,
+                    selected_seasons=sorted(seasons) if seasons else None,
+                    errors=[f"Unexpected error: {exc}"],
+                )
+                any_errors = True
             outcomes.append(series_outcome)
             total_restored += len(series_outcome.restored)
             total_missing_db += len(series_outcome.skipped_missing_db)

@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Restore modal shows a live in-progress bar while a restore job is running so users have visible feedback during longer operations.
 - Hardened restore endpoint to tolerate Sonarr episode payloads without `seasonNumber` so season-level restores no longer crash the API.
 - Restore process now leaves SQLite markers intact whenever any series reports errors, preventing accidental data loss on partial failures.
+- Additional guards ensure malformed Sonarr episode entries and unexpected per-series exceptions no longer crash restores; failures are surfaced in the response instead of dropping the API connection.
 
 ---
 
