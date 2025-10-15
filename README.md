@@ -222,6 +222,15 @@ MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
 
 ---
 
+## Restore Dashboard Workflow
+
+- Submitting the **Restore Originals** modal now schedules a background restore job. The UI shows the job id and live status until it completes.
+- When the job finishes successfully the modal populates the restore summary; failures surface the error and keep processed markers intact so you can retry.
+- Poll job state directly via the API: `GET /restore/jobs/<job_id>` returns `pending`, `running`, `succeeded`, or `failed` together with the final payload.
+- Need a blocking call? Pass `wait_for_completion=true` in the JSON body for `/restore/run` to wait for completion (useful for CLI automation).
+
+---
+
 ## Troubleshooting
 
 - **Database missing / schema errors** — the API warns if the DB file is absent. Run the worker once (or `python3 create_db.py`) to create it.
