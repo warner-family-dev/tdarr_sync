@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from logging.handlers import WatchedFileHandler
 
@@ -151,9 +151,20 @@ def sync_status():
 
 
 @app.post("/sync/run", response_model=schemas.SyncTriggerResponse)
-def trigger_sync(dry_run: bool = False):
+def trigger_sync(dry_run: bool = False, payload: schemas.SyncRunRequest | None = Body(default=None)):
+    request = payload or schemas.SyncRunRequest()
+    structured = None
+    if request.selections:
+        structured = []
+        for item in request.selections:
+            seasons = None
+            if item.seasons is not None:
+                seasons = [int(season) for season in item.seasons if isinstance(season, int)]
+            structured.append({"series_id": int(item.series_id), "seasons": seasons})
+
+    effective_dry_run = bool(dry_run or request.dry_run)
     try:
-        runner.trigger(dry_run=dry_run)
+        runner.trigger(dry_run=effective_dry_run, selection=structured)
         return schemas.SyncTriggerResponse(accepted=True, running=True)
     except SyncAlreadyRunningError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -17,6 +17,7 @@ No existing .env keys changed.
 """
 
 import argparse
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -26,7 +27,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -198,6 +199,75 @@ def mark_processed(conn, file_path: str):
     c.execute("INSERT OR REPLACE INTO processed_files (file_path, processed_at) VALUES (?, ?)", (file_path, now))
     conn.commit()
 
+
+def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]]]]:
+    raw = os.environ.get("TDARR_SYNC_SELECTION")
+    if not raw:
+        return None
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.error("Invalid TDARR_SYNC_SELECTION payload: %s", exc)
+        return None
+
+    if not isinstance(payload, list):
+        logger.error("TDARR_SYNC_SELECTION must be a list of selections; ignoring value.")
+        return None
+
+    structured: Dict[int, Optional[Set[int]]] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        series_raw = item.get("series_id")
+        if series_raw is None:
+            continue
+        try:
+            series_id = int(series_raw)
+        except (TypeError, ValueError):
+            continue
+
+        seasons_raw = item.get("seasons")
+        if seasons_raw is None:
+            structured[series_id] = None
+            continue
+
+        if not isinstance(seasons_raw, list):
+            continue
+
+        normalized: Set[int] = set()
+        for season in seasons_raw:
+            try:
+                normalized.add(int(season))
+            except (TypeError, ValueError):
+                continue
+
+        if not normalized:
+            # Skip entries that do not include any valid seasons
+            continue
+
+        structured[series_id] = normalized
+
+    if not structured:
+        logger.warning("TDARR_SYNC_SELECTION did not contain any valid series entries.")
+        return None
+
+    logger.info(
+        "Structured selection received via environment: %s",
+        {series_id: (sorted(seasons) if seasons is not None else None) for series_id, seasons in structured.items()},
+    )
+    return structured
+
+
+def episode_season_number(episode: dict) -> int:
+    raw = episode.get("seasonNumber")
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
 # -------------------- Archive/Retention (AFTER restore only) --------------------
 def _compute_backup_target(original: Path) -> Path:
     """
@@ -293,7 +363,7 @@ def cleanup_old_originals():
     logger.info("SWEEP: scanned=%d, deleted=%d", scanned, deleted)
 
 # -------------------- Phases --------------------
-def process_sonarr_to_tdarr(dry_run=False, selected_series_ids: Optional[List[int]] = None):
+def process_sonarr_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional[Set[int]]]] = None):
     conn = init_db()
     tag_id = find_tag_id(SONARR_TAG_NAME)
     series_list = get_series_with_tag(tag_id)
@@ -302,24 +372,37 @@ def process_sonarr_to_tdarr(dry_run=False, selected_series_ids: Optional[List[in
         conn.close()
         return
 
-    if selected_series_ids is not None:
+    series_selection = selection or None
+    if series_selection is not None:
+        selected_ids = set(series_selection.keys())
         before = len(series_list)
-        series_list = [s for s in series_list if s.get("id") in set(selected_series_ids)]
-        logger.info("Interactive selection: %d -> %d series", before, len(series_list))
+        series_list = [s for s in series_list if s.get("id") in selected_ids]
+        logger.info("Structured selection: %d -> %d series", before, len(series_list))
         if not series_list:
             logger.info("No series selected; nothing to copy.")
             conn.close()
             return
 
     for s in series_list:
-        series_id = s.get("id")
+        try:
+            series_id = int(s.get("id"))
+        except (TypeError, ValueError):
+            logger.warning("Skipping series with invalid id: %s", s)
+            continue
         title = s.get("title")
+        season_filter = None
+        if series_selection is not None and series_id in series_selection:
+            season_filter = series_selection.get(series_id)
         logger.info("SERIES: %s (id=%s)", title, series_id)
         for ef in get_episode_files_for_series(series_id):
             path = ef.get("path") or ef.get("relativePath")
             if not path:
                 logger.warning("Skipping episode file with no path: %s", ef)
                 continue
+            if season_filter is not None:
+                season_number = episode_season_number(ef)
+                if season_number not in season_filter:
+                    continue
             src = translate_path(path)
             if not src.exists():
                 logger.warning("Missing source file, skipping: %s", src)
@@ -556,11 +639,13 @@ def main():
 
     logger.info("Starting tdarr_sync (dry_run=%s, interactive=%s)", args.dry_run, use_interactive)
     try:
-        selected_ids = None
-        if use_interactive:
+        selection = load_structured_selection_from_env()
+        if selection is None and use_interactive:
             selected_ids = interactive_select_series()
+            if selected_ids:
+                selection = {series_id: None for series_id in selected_ids}
 
-        process_sonarr_to_tdarr(dry_run=args.dry_run, selected_series_ids=selected_ids)
+        process_sonarr_to_tdarr(dry_run=args.dry_run, selection=selection)
         if not args.skip_restore:
             move_tdarr_output_back(dry_run=args.dry_run)
             if not args.dry_run:
