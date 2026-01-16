@@ -14,3 +14,4 @@ web/.next
 web/node_modules
 web/.turbo
 tmp
+dev-docs
