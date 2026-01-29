@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.0.3] - 2025-01-29
+### Added
+- Dashboard trigger form now includes a **Select** toggle that opens a modal for choosing series/seasons before starting a sync.
+- `/sync/run` accepts structured selection payloads and passes them to the worker via the new `TDARR_SYNC_SELECTION` environment hook.
+
+### Changed
+- Manual sync trigger on the dashboard calls the API directly and surfaces inline success/error feedback instead of relying on a server action.
+- Docker deployment no longer auto-runs syncs on a timer; scheduling is now cron-driven via the manual runner profile or direct CLI calls.
+- Removed auto-run scheduling variables from the environment configuration template to match manual-only execution.
+
+### Removed
+- Deleted the `dev-docs/` directory and its contents after they were committed by mistake.
+
+---
+
 ## [2.0.2] - 2025-10-14
 ### Added
 - Password-protected “Restore Originals” workflow on the dashboard with modal series selection (supports ranges and comma lists) and detailed results.

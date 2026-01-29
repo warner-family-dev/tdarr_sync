@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: docker/tdarr.Dockerfile
     command: ["python", "-m", "services.worker"]
+    profiles:
+      - manual
     env_file:
       - .env
     environment:
@@ -39,9 +41,6 @@ services:
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
       - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
-    depends_on:
-      worker:
-        condition: service_started
     ports:
       - "${API_PORT:-8000}:8000"
     restart: unless-stopped
