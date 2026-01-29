@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Ruff cleanup: removed unused imports and adjusted test imports to satisfy linting.
 - Local check script now sets `PYTHONPATH` so tests can import the `api` package during manual runs.
 - Local check script now prepends the repo root to `PYTHONPATH` even when one is already set.
+- Local check script now logs the working directory and `PYTHONPATH` for easier debugging.
 
 ### Removed
 
