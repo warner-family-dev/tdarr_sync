@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Local check script now installs Python deps via `pipx run --pip-args` before running pytest.
 - Schemas now handle both Pydantic v1 and v2 when rebuilding forward refs.
 - Test stubbing now only replaces Pydantic when the real library is unavailable.
+- Restore service tests now mock episode lookups to avoid live Sonarr calls during pytest runs.
 
 ### Removed
 

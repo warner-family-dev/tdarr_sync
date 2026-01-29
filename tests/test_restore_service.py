@@ -93,7 +93,9 @@ class RestoreServiceAuthTests(unittest.TestCase):
 
         with patch.object(service, "_load_processed_map", return_value={}), patch.object(
             service, "_fetch_series_list", return_value=[{"id": 42, "title": "Example"}]
-        ), patch.object(service, "_build_entries", return_value=[dummy_entry]):
+        ), patch.object(service, "_fetch_episode_files", return_value=[]), patch.object(
+            service, "_build_entries", return_value=[dummy_entry]
+        ):
             with self.assertRaises(RestoreSelectionError):
                 service.restore(
                     password="secret",
@@ -129,9 +131,11 @@ class RestoreServiceAuthTests(unittest.TestCase):
 
         with patch.object(service, "_load_processed_map", return_value={}), patch.object(
             service, "_fetch_series_list", return_value=[{"id": 99, "title": "Broken"}]
-        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
-            service, "_restore_single_series", return_value=error_outcome
-        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+        ), patch.object(service, "_fetch_episode_files", return_value=[]), patch.object(
+            service, "_build_entries", return_value=[entry]
+        ), patch.object(service, "_restore_single_series", return_value=error_outcome), patch(
+            "api.restore_service.db.delete_processed_entries"
+        ) as mock_delete:
             service.restore(password="secret", structured=[{"series_id": 99, "seasons": None}])
             mock_delete.assert_not_called()
 
@@ -160,9 +164,11 @@ class RestoreServiceAuthTests(unittest.TestCase):
 
         with patch.object(service, "_load_processed_map", return_value={}), patch.object(
             service, "_fetch_series_list", return_value=[{"id": 7, "title": "Clean"}]
-        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
-            service, "_restore_single_series", return_value=success_outcome
-        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+        ), patch.object(service, "_fetch_episode_files", return_value=[]), patch.object(
+            service, "_build_entries", return_value=[entry]
+        ), patch.object(service, "_restore_single_series", return_value=success_outcome), patch(
+            "api.restore_service.db.delete_processed_entries"
+        ) as mock_delete:
             service.restore(password="secret", structured=[{"series_id": 7, "seasons": None}])
             mock_delete.assert_called_once()
 
@@ -184,9 +190,11 @@ class RestoreServiceAuthTests(unittest.TestCase):
 
         with patch.object(service, "_load_processed_map", return_value={}), patch.object(
             service, "_fetch_series_list", return_value=[{"id": 55, "title": "Boom"}]
-        ), patch.object(service, "_build_entries", return_value=[entry]), patch.object(
-            service, "_restore_single_series", side_effect=RuntimeError("boom")
-        ), patch("api.restore_service.db.delete_processed_entries") as mock_delete:
+        ), patch.object(service, "_fetch_episode_files", return_value=[]), patch.object(
+            service, "_build_entries", return_value=[entry]
+        ), patch.object(service, "_restore_single_series", side_effect=RuntimeError("boom")), patch(
+            "api.restore_service.db.delete_processed_entries"
+        ) as mock_delete:
             outcome = service.restore(password="secret", structured=[{"series_id": 55, "seasons": None}])
             mock_delete.assert_not_called()
             self.assertTrue(outcome.results)
