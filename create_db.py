@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
+import os
 import sqlite3
 from pathlib import Path
-import time
-import os
 
 DB_FILE = Path(os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db"))
 
