@@ -1,9 +1,10 @@
+import json
 import os
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 
 class SyncAlreadyRunningError(RuntimeError):
@@ -22,7 +23,7 @@ class SyncRunner:
         self._last_exit_code: Optional[int] = None
         self._last_error: Optional[str] = None
 
-    def trigger(self, dry_run: bool = False) -> None:
+    def trigger(self, dry_run: bool = False, selection: Optional[Sequence[dict]] = None) -> None:
         with self._lock:
             if self._running:
                 raise SyncAlreadyRunningError("Sync is already in progress")
@@ -30,7 +31,7 @@ class SyncRunner:
             self._last_started_at = time.time()
             self._last_error = None
 
-        thread = threading.Thread(target=self._run, args=(dry_run,), daemon=True)
+        thread = threading.Thread(target=self._run, args=(dry_run, selection), daemon=True)
         thread.start()
 
     def status(self) -> dict:
@@ -43,13 +44,22 @@ class SyncRunner:
                 "last_error": self._last_error,
             }
 
-    def _run(self, dry_run: bool) -> None:
+    def _run(self, dry_run: bool, selection: Optional[Sequence[dict]]) -> None:
         cmd = [self._python_executable, str(self._script_path)]
         if dry_run:
             cmd.append("--dry-run")
 
+        env = self._env.copy()
+        if selection is not None:
+            try:
+                env["TDARR_SYNC_SELECTION"] = json.dumps(selection)
+            except TypeError:
+                env["TDARR_SYNC_SELECTION"] = "[]"
+        elif "TDARR_SYNC_SELECTION" in env:
+            env.pop("TDARR_SYNC_SELECTION", None)
+
         try:
-            result = subprocess.run(cmd, check=False, env=self._env.copy())
+            result = subprocess.run(cmd, check=False, env=env)
             exit_code = result.returncode
             if exit_code != 0:
                 self._last_error = f"Sync exited with code {exit_code}"

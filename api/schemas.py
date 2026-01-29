@@ -36,6 +36,16 @@ class SyncTriggerResponse(BaseModel):
     running: bool
 
 
+class SyncSelectionPayload(BaseModel):
+    series_id: int = Field(..., ge=0)
+    seasons: Optional[List[int]] = None
+
+
+class SyncRunRequest(BaseModel):
+    dry_run: bool = False
+    selections: Optional[List[SyncSelectionPayload]] = None
+
+
 class RestoreSeasonEntry(BaseModel):
     number: int
     name: str

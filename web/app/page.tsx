@@ -1,6 +1,6 @@
 import AutoRefresh from "./AutoRefresh";
 import RestoreOriginals from "./RestoreOriginals";
-import { triggerSyncAction } from "./actions";
+import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
 
 type ProcessedFile = {
@@ -130,15 +130,7 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
-          <form action={triggerSyncAction} className="trigger-form">
-            <button className="button" type="submit" disabled={status?.running}>
-              Trigger Sync
-            </button>
-            <label className="checkbox">
-              <input name="dry-run" type="checkbox" defaultChecked={false} />
-              Dry run
-            </label>
-          </form>
+          <TriggerSyncControl disabled={status?.running ?? false} />
           <div className="restore-launch">
             <RestoreOriginals />
           </div>
