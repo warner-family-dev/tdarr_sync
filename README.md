@@ -10,9 +10,9 @@ The project now ships as a dockerised stack with a REST API and dashboard (mirro
 ## Highlights
 
 - **Copy phase:** Files from Sonarr series with a specific tag (e.g. `transcode`) are copied into `TDARR_INPUT_DIR` (preserving relative paths). Originals are untouched.
-- **Restore phase:** When Tdarr outputs a transcoded file into `TDARR_OUTPUT_DIR`, the worker moves it back into `BASE_DIR`, archiving any original with the configured suffix/location first.
+- **Restore phase:** When Tdarr outputs a transcoded file into `TDARR_OUTPUT_DIR`, Tdarr Sync moves it back into `BASE_DIR`, archiving any original with the configured suffix/location first.
 - **Retention-aware archives:** Archived originals are “touched” to now so retention windows respect when they were replaced, not the media’s production date.
-- **Container-first:** `docker-compose.yml` starts three services — worker, API, and dashboard — each configurable via `.env`.
+- **Container-first:** `docker-compose.yml` starts the API and dashboard, plus an optional manual runner profile for cron-driven syncs.
 - **Observability:** REST endpoints expose sync state and processed history; the Next.js dashboard surfaces metrics, recent activity, and a one-click manual trigger.
 - **Notification hooks:** Optional Telegram alerts for failures, plus rotating log files kept under `/logs`.
 
@@ -22,14 +22,14 @@ The project now ships as a dockerised stack with a REST API and dashboard (mirro
 
 | Service | Image | Port | Responsibility |
 | --- | --- | --- | --- |
-| `worker` | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` on the interval specified in `.env`, handles copy/restore/retention, and writes logs/DB state. |
-| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code/data/log mounts and media volumes as the worker so manual runs can access the library. |
+| `worker` (manual profile) | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` once when invoked (cron or ad-hoc) and writes logs/DB state. |
+| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code/data/log mounts and media volumes as the runner so manual runs can access the library. |
 | `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API and mirrors the ergonomics of the `whiskey_db` UI. |
 
 Shared volumes:
 
 - `${TDARR_SYNC_DATA_DIR}` → mounted at `/data` (stores `sonarr_tdarr_state.db`)
-- `${TDARR_SYNC_LOG_DIR}` → mounted at `/logs` (rotating logs for worker/API)
+- `${TDARR_SYNC_LOG_DIR}` → mounted at `/logs` (rotating logs for API/runner)
 - Media mounts provided via `HOST_LIBRARY_MOUNT`, `HOST_TDARR_INPUT`, `HOST_TDARR_OUTPUT`, and optional `HOST_ARCHIVE_DIR`
 
 ---
@@ -54,11 +54,19 @@ Shared volumes:
    API docs/health are available at `http://localhost:${API_PORT}/health` (defaults to `8000`).
 5. Check logs when needed:
    ```bash
-   docker compose logs -f worker
    docker compose logs -f api
    ```
 
-The worker launches an initial sync (respecting `SYNC_DRY_RUN`) and then loops every `SYNC_INTERVAL_SECONDS`. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
+Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
+
+### Scheduling with cron (Docker)
+
+Use the manual runner profile so cron can launch a one-off sync container on your schedule.
+
+```bash
+# Every 30 minutes
+*/30 * * * * cd /path/to/tdarr_sync && docker compose --profile manual run --rm worker
+```
 
 ---
 
@@ -85,12 +93,9 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
 - Sonarr/Tdarr paths mirror the original script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, etc.).
 
-### Worker cadence and behaviour
+### Manual sync controls
 
-- `SYNC_INTERVAL_SECONDS` — interval between runs (set `0` or negative to run once and exit).
-- `SYNC_ON_START` — run immediately on container boot (`true`/`false`).
-- `SYNC_DRY_RUN` — pass `--dry-run` to the script so the loop never mutates files.
-- `SYNC_ERROR_BACKOFF_SECONDS` — additional sleep time after a failed sync.
+- `SYNC_DRY_RUN` — pass `--dry-run` to the script so runs never mutate files.
 
 ### Optional integrations
 
@@ -136,13 +141,13 @@ All endpoints return JSON.
 
 A missing `seasons` field (or `null`) means “all seasons” for that series.
 
-The API shares the same `/data` and `/logs` volumes as the worker so you can inspect state via HTTP without accessing the host filesystem.
+The API shares the same `/data` and `/logs` volumes as the runner so you can inspect state via HTTP without accessing the host filesystem.
 
 ---
 
-## Worker Behaviour
+## Sync Behaviour
 
-Under the hood the worker still drives `tdarr_sync.py`, so all original guarantees remain:
+Under the hood Tdarr Sync drives `tdarr_sync.py`, so all original guarantees remain:
 
 - **Copy phase:** finds Sonarr series tagged with `SONARR_TAG_NAME`, mirrors their media into `TDARR_INPUT_DIR`, and never renames sources while copying.
 - **Restore phase:** watches `TDARR_OUTPUT_DIR`, archives the original to `<filename><BACKUP_SUFFIX>` (optionally moving to `MOVE_ORIGINAL_FILES_DEST`), then replaces it with the transcoded output.
@@ -150,8 +155,6 @@ Under the hood the worker still drives `tdarr_sync.py`, so all original guarante
 - **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
 - **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
 - **Targeted runs:** setting the `TDARR_SYNC_SELECTION` environment variable to the same JSON structure the API accepts limits the copy phase to the chosen series/seasons (used by the dashboard’s Select mode).
-- When `SYNC_INTERVAL_SECONDS <= 0`, the container boots once, logs the skip, and stays stopped (restart policy is `on-failure`) so the stack only runs on manual triggers.
-
 ---
 
 ## Database & Logging
@@ -225,7 +228,7 @@ journalctl -u tdarr-sync.service -f
 ## How Backups Are Named & Cleaned
 
 - On restore, if the destination exists it becomes `<name><BACKUP_SUFFIX>` (for example `Episode.mkv.orig`).
-- If that filename already exists, the worker appends an epoch timestamp **before** the suffix to keep clean sweeper matches (e.g. `Episode.1700000000.orig`).
+- If that filename already exists, Tdarr Sync appends an epoch timestamp **before** the suffix to keep clean sweeper matches (e.g. `Episode.1700000000.orig`).
 - With `MOVE_ORIGINAL_FILES=true`, the renamed file moves to:
 
 ```
@@ -248,7 +251,7 @@ MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
 
 ## Troubleshooting
 
-- **Database missing / schema errors** — the API warns if the DB file is absent. Run the worker once (or `python3 create_db.py`) to create it.
+- **Database missing / schema errors** — the API warns if the DB file is absent. Run Tdarr Sync once (or `python3 create_db.py`) to create it.
 - **Mount paths wrong** — double-check the `HOST_*` paths map to real directories and that the in-container equivalents (`BASE_DIR`, etc.) match how Tdarr/Sonarr present paths.
 - **Permissions** — if files appear as root-owned on the host, set `PUID`/`PGID` in `.env` to match your media user/group.
 - **Tdarr outputs never restore** — verify Tdarr writes to the mounted `HOST_TDARR_OUTPUT` with the same relative structure the script expects.
@@ -258,7 +261,7 @@ MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
 
 ## Development
 
-- Install Python deps for the worker/API locally:
+- Install Python deps for the sync/API locally:
   ```bash
   pip install -r requirements/base.txt
   ```

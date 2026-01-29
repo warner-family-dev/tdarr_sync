@@ -1,8 +1,8 @@
+import argparse
 import logging
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 from logging.handlers import WatchedFileHandler
 from pathlib import Path
@@ -21,13 +21,6 @@ class _TZFormatter(logging.Formatter):
         return dt.isoformat()
 
 
-def _bool_env(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def _current_zone() -> ZoneInfo:
     tz_name = os.getenv("TZ", "UTC")
     try:
@@ -36,10 +29,7 @@ def _current_zone() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-SYNC_INTERVAL_SECONDS = int(os.getenv("SYNC_INTERVAL_SECONDS", "1800"))
-SYNC_DRY_RUN = _bool_env("SYNC_DRY_RUN", False)
-SYNC_ON_START = _bool_env("SYNC_ON_START", True)
-SYNC_ERROR_BACKOFF_SECONDS = int(os.getenv("SYNC_ERROR_BACKOFF_SECONDS", "300"))
+SYNC_DRY_RUN = os.getenv("SYNC_DRY_RUN", "false").lower() in {"1", "true", "yes", "on"}
 SYNC_SCRIPT_PATH = Path(os.getenv("SYNC_SCRIPT_PATH", "/app/tdarr_sync.py"))
 SYNC_PYTHON_EXECUTABLE = os.getenv("SYNC_PYTHON_EXECUTABLE", sys.executable or "python")
 
@@ -82,36 +72,21 @@ def run_sync(dry_run: bool = False) -> int:
     return process.returncode
 
 
-def _sleep(seconds: int):
-    try:
-        time.sleep(seconds)
-    except KeyboardInterrupt:
-        raise
-    except Exception as exc:
-        logger.warning("Sleep interrupted: %s", exc)
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Tdarr Sync once.")
+    parser.add_argument("--dry-run", action="store_true", help="Run Tdarr Sync in dry-run mode.")
+    return parser.parse_args()
 
 
 def main():
-    logger.info("Tdarr Sync worker booting")
-    logger.info("Interval: %s seconds | Dry run: %s | On start: %s", SYNC_INTERVAL_SECONDS, SYNC_DRY_RUN, SYNC_ON_START)
+    args = _parse_args()
+    dry_run = bool(args.dry_run or SYNC_DRY_RUN)
 
-    if SYNC_ON_START:
-        exit_code = run_sync(SYNC_DRY_RUN)
-        if exit_code != 0:
-            logger.error("Initial sync failed; backing off for %s seconds", SYNC_ERROR_BACKOFF_SECONDS)
-            _sleep(SYNC_ERROR_BACKOFF_SECONDS)
-
-    if SYNC_INTERVAL_SECONDS <= 0:
-        logger.info("SYNC_INTERVAL_SECONDS <= 0; exiting after initial run")
-        return
-
-    while True:
-        logger.info("Sleeping for %s seconds before next sync", SYNC_INTERVAL_SECONDS)
-        _sleep(SYNC_INTERVAL_SECONDS)
-        exit_code = run_sync(SYNC_DRY_RUN)
-        if exit_code != 0:
-            logger.error("Sync failed; backing off for %s seconds", SYNC_ERROR_BACKOFF_SECONDS)
-            _sleep(SYNC_ERROR_BACKOFF_SECONDS)
+    logger.info("Tdarr Sync worker booting (manual run only)")
+    exit_code = run_sync(dry_run)
+    if exit_code != 0:
+        logger.error("Sync failed with exit code %s", exit_code)
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":
