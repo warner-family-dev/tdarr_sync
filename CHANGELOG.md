@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Hardened local checks/tests to run cleanly (PYTHONPATH handling, deps install, Pydantic compatibility, and mocked Sonarr calls).
+- Updated README repo URL and removed remaining whiskey-db references.
 
 ### Removed
 
