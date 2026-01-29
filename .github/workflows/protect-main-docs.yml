@@ -1,0 +1,38 @@
+
+name: Prevent Dev Docs On Main
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+jobs:
+  guard:
+    name: Block dev-docs merges
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Ensure dev docs are not in PR diff
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          git fetch origin "$BASE_SHA" "$HEAD_SHA" --depth=1
+          CHANGED=$(git diff --name-status "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files (with status):\n$CHANGED"
+          if echo "$CHANGED" | grep -E '^[^D]\s+(dev-docs/|ROADMAP\\.md)'; then
+            echo "::error::This pull request modifies dev-only documentation (dev-docs/** or ROADMAP.md). Remove those additions or edits before merging into main."
+            exit 1
+          fi

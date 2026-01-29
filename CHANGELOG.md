@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.0.4] - 2025-01-29
+### Added
+
+### Changed
+- GitHub workflow now blocks dev-only docs changes (`dev-docs/**`, `ROADMAP.md`) on both pull requests and direct pushes to `main`.
+
+### Removed
+
 ## [2.0.3] - 2025-01-29
 ### Added
 - Dashboard trigger form now includes a **Select** toggle that opens a modal for choosing series/seasons before starting a sync.
