@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Local check script now prepends the repo root to `PYTHONPATH` even when one is already set.
 - Local check script now logs the working directory and `PYTHONPATH` for easier debugging.
 - Pytest now ensures the repo root is on `sys.path` via `tests/conftest.py` to avoid import errors.
+- Local check script now installs Python deps via `pipx run --pip-args` before running pytest.
 
 ### Removed
 
