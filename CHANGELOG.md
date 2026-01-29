@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Added Release Drafter workflow and config to maintain a draft release for every PR and update on main merges.
 - Added CI workflow to run Ruff and Pytest on PRs and pushes to `main`.
+- Added a dev script to run local Ruff/Pytest checks and log results to `logs/tdarr_sync_build.log` with local timestamps.
 
 ### Changed
 - GitHub workflow now blocks dev-only docs changes (`dev-docs/**`, `ROADMAP.md`) on both pull requests and direct pushes to `main`.
