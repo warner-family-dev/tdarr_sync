@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.4] - 2025-01-29
 ### Added
+- Added Release Drafter workflow and config to maintain a draft release for every PR and update on main merges.
 
 ### Changed
 - GitHub workflow now blocks dev-only docs changes (`dev-docs/**`, `ROADMAP.md`) on both pull requests and direct pushes to `main`.

@@ -1,0 +1,43 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "Added"
+    labels:
+      - "feat"
+      - "feature"
+      - "enhancement"
+  - title: "Changed"
+    labels:
+      - "chore"
+      - "refactor"
+      - "docs"
+  - title: "Fixed"
+    labels:
+      - "fix"
+      - "bug"
+  - title: "Removed"
+    labels:
+      - "remove"
+      - "breaking"
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+change-title-escapes: "\\<*_&"
+version-resolver:
+  major:
+    labels:
+      - "breaking"
+  minor:
+    labels:
+      - "feat"
+      - "feature"
+      - "enhancement"
+  patch:
+    labels:
+      - "fix"
+      - "bug"
+      - "docs"
+      - "chore"
+      - "refactor"
+  default: patch
+template: |
+  ## Changes
+  $CHANGES
