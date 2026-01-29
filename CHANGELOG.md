@@ -3,22 +3,10 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.4] - 2025-01-29
 ### Added
-- Added Release Drafter workflow and config to maintain a draft release for every PR and update on main merges.
-- Added CI workflow to run Ruff and Pytest on PRs and pushes to `main`.
-- Added a dev script (`dev-docs/code_check.py`) to run local Ruff/Pytest checks and log results to `logs/tdarr_sync_build.log` with local timestamps.
-- Added ASCII-art start banner and completion marker to the local code check log output.
+- Added Release Drafter, CI checks (Ruff/Pytest), and a local code-check script with logging to `logs/tdarr_sync_build.log`.
 
 ### Changed
-- GitHub workflow now blocks dev-only docs changes (`dev-docs/**`, `ROADMAP.md`) on both pull requests and direct pushes to `main`.
-- Ruff cleanup: removed unused imports and adjusted test imports to satisfy linting.
-- Local check script now sets `PYTHONPATH` so tests can import the `api` package during manual runs.
-- Local check script now prepends the repo root to `PYTHONPATH` even when one is already set.
-- Local check script now logs the working directory and `PYTHONPATH` for easier debugging.
-- Pytest now ensures the repo root is on `sys.path` via `tests/conftest.py` to avoid import errors.
-- Local check script now installs Python deps via `pipx run --pip-args` before running pytest.
-- Schemas now handle both Pydantic v1 and v2 when rebuilding forward refs.
-- Test stubbing now only replaces Pydantic when the real library is unavailable.
-- Restore service tests now mock episode lookups to avoid live Sonarr calls during pytest runs.
+- Hardened local checks/tests to run cleanly (PYTHONPATH handling, deps install, Pydantic compatibility, and mocked Sonarr calls).
 
 ### Removed
 
