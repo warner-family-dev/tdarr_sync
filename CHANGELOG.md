@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Manual sync trigger on the dashboard calls the API directly and surfaces inline success/error feedback instead of relying on a server action.
 - Docker deployment no longer auto-runs syncs on a timer; scheduling is now cron-driven via the manual runner profile or direct CLI calls.
+- Removed auto-run scheduling variables from the environment configuration template to match manual-only execution.
 
 ---
 
