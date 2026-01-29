@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - GitHub workflow now blocks dev-only docs changes (`dev-docs/**`, `ROADMAP.md`) on both pull requests and direct pushes to `main`.
 - Ruff cleanup: removed unused imports and adjusted test imports to satisfy linting.
 - Local check script now sets `PYTHONPATH` so tests can import the `api` package during manual runs.
+- Local check script now prepends the repo root to `PYTHONPATH` even when one is already set.
 
 ### Removed
 
