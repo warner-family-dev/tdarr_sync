@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Local check script now logs the working directory and `PYTHONPATH` for easier debugging.
 - Pytest now ensures the repo root is on `sys.path` via `tests/conftest.py` to avoid import errors.
 - Local check script now installs Python deps via `pipx run --pip-args` before running pytest.
+- Schemas now handle both Pydantic v1 and v2 when rebuilding forward refs.
 
 ### Removed
 

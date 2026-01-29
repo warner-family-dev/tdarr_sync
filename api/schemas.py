@@ -132,7 +132,10 @@ class RestoreJobStatus(BaseModel):
 
 RestoreRunResponse = RestoreResponse | RestoreTriggerResponse
 
-RestoreJobStatus.model_rebuild()
+if hasattr(RestoreJobStatus, "model_rebuild"):
+    RestoreJobStatus.model_rebuild()
+else:  # Pydantic v1 fallback
+    RestoreJobStatus.update_forward_refs()
 
 
 def to_iso(timestamp: Optional[int], tz) -> Optional[str]:
