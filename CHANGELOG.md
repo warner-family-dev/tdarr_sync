@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.0.3] - 2025-01-29
 ### Added
 - Dashboard trigger form now includes a **Select** toggle that opens a modal for choosing series/seasons before starting a sync.
 - `/sync/run` accepts structured selection payloads and passes them to the worker via the new `TDARR_SYNC_SELECTION` environment hook.
