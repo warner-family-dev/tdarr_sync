@@ -9,21 +9,30 @@ TEST_TMP.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("STATE_DB_FILE", str(TEST_TMP / "state.db"))
 os.environ.setdefault("LOG_FILE", str(TEST_TMP / "tdarr_sync.log"))
 
+def _ensure_pydantic():
+    try:
+        import pydantic  # noqa: F401
+        return
+    except Exception:
+        pass
+
+    stub = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, **data):
+            for key, value in data.items():
+                setattr(self, key, value)
+
+    def _field(default=None, **_kwargs):
+        return default
+
+    stub.BaseModel = _BaseModel
+    stub.Field = _field
+    sys.modules["pydantic"] = stub
+
+
 def _load_restore_selection():
-    if "pydantic" not in sys.modules:
-        stub = types.ModuleType("pydantic")
-
-        class _BaseModel:
-            def __init__(self, **data):
-                for key, value in data.items():
-                    setattr(self, key, value)
-
-        def _field(default=None, **_kwargs):
-            return default
-
-        stub.BaseModel = _BaseModel
-        stub.Field = _field
-        sys.modules["pydantic"] = stub
+    _ensure_pydantic()
 
     from api.restore_service import RestoreSelectionError, parse_selection
 
