@@ -1,9 +1,9 @@
 # Tdarr Sync (Sonarr ➜ Tdarr ➜ Library)
 
 Sync media from a Sonarr library to Tdarr for transcoding, then restore the transcoded files back to their original locations — safely.  
-The project now ships as a dockerised stack with a REST API and dashboard (mirroring the ergonomics of `whiskey_db`) so you can deploy, monitor, and trigger runs without SSHing into the host.
+The project now ships as a dockerised stack with a REST API and dashboard so you can deploy, monitor, and trigger runs without SSHing into the host.
 
-> Repo: <https://github.com/keatre/tdarr_sync>
+> Repo: <https://github.com/warner-family-dev/tdarr_sync>
 
 ---
 
@@ -24,7 +24,7 @@ The project now ships as a dockerised stack with a REST API and dashboard (mirro
 | --- | --- | --- | --- |
 | `worker` (manual profile) | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` once when invoked (cron or ad-hoc) and writes logs/DB state. |
 | `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code/data/log mounts and media volumes as the runner so manual runs can access the library. |
-| `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API and mirrors the ergonomics of the `whiskey_db` UI. |
+| `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API. |
 
 Shared volumes:
 
@@ -107,7 +107,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 ## Web Dashboard (`web/`)
 
 - Built with Next.js 14 + React 18.
-- Mirrors the look-and-feel of `whiskey_db`: dark theme, responsive layout, quick stats panel.
+- Dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
 - Provides a manual trigger form with dry-run and per-series/season selection options — the UI calls the API directly.
 - Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.

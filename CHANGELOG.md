@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.0.4] - 2025-01-29
+### Added
+- Added Release Drafter, CI checks (Ruff/Pytest), and a local code-check script with logging to `logs/tdarr_sync_build.log`.
+
+### Changed
+- Hardened local checks/tests to run cleanly (PYTHONPATH handling, deps install, Pydantic compatibility, and mocked Sonarr calls).
+- Updated README repo URL and removed remaining whiskey-db references.
+
+### Removed
+
 ## [2.0.3] - 2025-01-29
 ### Added
 - Dashboard trigger form now includes a **Select** toggle that opens a modal for choosing series/seasons before starting a sync.
