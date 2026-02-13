@@ -45,6 +45,16 @@ services:
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
     ports:
       - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).getcode() == 200 else 1)
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
 
   web:
@@ -58,7 +68,8 @@ services:
       TZ: ${TZ}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped

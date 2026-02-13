@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Updated `docker-compose.yml` so `web` waits for a healthy `api` service before startup, reducing transient DNS/proxy errors during restarts.
+
 ## [2.2.0] - 2026-02-13
 ### Added
 - Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.
