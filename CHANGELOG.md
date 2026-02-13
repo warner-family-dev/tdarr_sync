@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Refactored copy/restore pipeline to support route-based input subfolders and source prefixes while preserving existing backup/retention behavior.
 - Worker/API Docker mounts now include dedicated Sonarr and Radarr library mounts (`SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`) with fallback compatibility.
 - Updated docs and environment template for Radarr settings, runtime settings file, and route-driven workflows.
+- Updated README to document that from `v2.2.0` onward Tdarr API keys must be enabled in Tdarr (disabled by default) before using UI routing/API-key features.
 - Header control now renders on the right of `Tdarr Sync Dashboard` as `branch (commit-date) | Settings`, and only `Settings` opens the modal.
 - Removed boxed styling from the header version/settings control so it displays as inline text.
 - Updated `docker-compose.yml` so `web` waits for a healthy `api` service before startup, reducing transient DNS/proxy errors during restarts.

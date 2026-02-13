@@ -58,6 +58,7 @@ Shared volumes:
    docker compose logs -f api
    ```
 6. In the top-right header control (`branch (commit-date) | Settings`), open **Settings** and define your tag-to-flow routes (for both Sonarr and Radarr). Tdarr server URL/IP and API key are managed there.
+7. Starting with `v2.2.0`, Tdarr API-key auth must be enabled in Tdarr before routing features work. Tdarr ships with API keys disabled by default, so enable it in Tdarr first, then paste the key into **Settings**.
 
 Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
 
