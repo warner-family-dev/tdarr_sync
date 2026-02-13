@@ -1,7 +1,9 @@
 import logging
 import os
+import subprocess
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -80,6 +82,49 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
+def _resolve_build_version() -> dict:
+    env_version = os.getenv("APP_GIT_VERSION", "").strip()
+    env_date = os.getenv("APP_GIT_COMMIT_DATE", "").strip()
+    env_sha = os.getenv("APP_GIT_COMMIT_SHA", "").strip()
+    if env_version and env_date:
+        return {
+            "git_version": env_version,
+            "commit_date": env_date,
+            "commit_sha": env_sha,
+            "source": "env",
+        }
+
+    repo_root = Path(__file__).resolve().parents[1]
+
+    def _run_git(args: list[str]) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    try:
+        version = _run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+        commit_date = _run_git(["show", "-s", "--format=%cs", "HEAD"])
+        commit_sha = _run_git(["rev-parse", "--short", "HEAD"])
+        return {
+            "git_version": version,
+            "commit_date": commit_date,
+            "commit_sha": commit_sha,
+            "source": "git",
+        }
+    except Exception:
+        return {
+            "git_version": env_version or "unknown",
+            "commit_date": env_date or "unknown",
+            "commit_sha": env_sha or "",
+            "source": "unknown",
+        }
+
+
 @app.on_event("startup")
 def on_startup():
     logger.info("Tdarr Sync API started")
@@ -93,6 +138,11 @@ def health():
     return {"status": "ok", "time": _now_iso()}
 
 
+@app.get("/version", response_model=schemas.BuildVersion)
+def get_version():
+    return schemas.BuildVersion(**_resolve_build_version())
+
+
 @app.get("/config")
 def get_config():
     data = settings.sanitized()
@@ -100,6 +150,7 @@ def get_config():
         "hostname": os.getenv("HOSTNAME", ""),
         "tz": settings.tz,
     }
+    data["build"] = _resolve_build_version()
     return data
 
 

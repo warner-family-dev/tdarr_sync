@@ -1,6 +1,5 @@
 import AutoRefresh from "./AutoRefresh";
 import RestoreOriginals from "./RestoreOriginals";
-import RoutingSettings from "./RoutingSettings";
 import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
 
@@ -162,11 +161,6 @@ export default async function DashboardPage() {
             </span>
           </div>
         </article>
-      </section>
-
-      <section className="card">
-        <h2>Routing Settings</h2>
-        <RoutingSettings />
       </section>
 
       <section className="card">

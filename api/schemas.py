@@ -59,6 +59,13 @@ class RoutingSettings(BaseModel):
     routes: List[TagFlowRoute] = Field(default_factory=list)
 
 
+class BuildVersion(BaseModel):
+    git_version: str
+    commit_date: str
+    commit_sha: str
+    source: Literal["env", "git", "unknown"]
+
+
 class RestoreSeasonEntry(BaseModel):
     number: int
     name: str

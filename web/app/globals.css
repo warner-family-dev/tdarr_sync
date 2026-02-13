@@ -22,6 +22,12 @@ body {
   border-bottom: 1px solid #1f2430;
 }
 
+.header-top-left {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 1rem;
+}
+
 .header h1 {
   margin: 0;
   font-size: 2rem;
@@ -30,6 +36,36 @@ body {
 .subtitle {
   margin-top: 0.5rem;
   color: #9aa4c1;
+}
+
+.settings-launcher-button {
+  border: 1px solid #2d3445;
+  background: #1a1f2b;
+  color: #e8edf8;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-launcher-button:hover {
+  background: #222a39;
+}
+
+.settings-launcher-version {
+  color: #f5f7fb;
+}
+
+.settings-launcher-sep {
+  color: #6f7991;
+}
+
+.settings-launcher-text {
+  color: #b9c2db;
 }
 
 .container {
@@ -248,6 +284,10 @@ tbody tr:nth-child(even) {
   width: 100%;
   padding: 1.5rem;
   animation: modal-enter 0.2s ease-out;
+}
+
+.settings-modal {
+  max-width: 980px;
 }
 
 @keyframes modal-enter {
