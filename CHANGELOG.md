@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.2.0] - 2026-02-13
 ### Added
 - Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.
 - Added dashboard Routing Settings editor for managing route order, source, tag, flow name, and Tdarr input subdirectory.
@@ -108,7 +108,8 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
-[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...HEAD
+[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...v2.2.0
 [2.0.4]: https://github.com/keatre/tdarr_sync/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/keatre/tdarr_sync/compare/v2.0.1...v2.0.2
