@@ -22,10 +22,12 @@ body {
   border-bottom: 1px solid #1f2430;
 }
 
-.header-top-left {
+.header-title-row {
   display: flex;
-  justify-content: flex-start;
-  margin-bottom: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .header h1 {
@@ -38,7 +40,7 @@ body {
   color: #9aa4c1;
 }
 
-.settings-launcher-button {
+.settings-launcher {
   border: 1px solid #2d3445;
   background: #1a1f2b;
   color: #e8edf8;
@@ -49,11 +51,6 @@ body {
   gap: 0.55rem;
   font-size: 1.02rem;
   font-weight: 600;
-  cursor: pointer;
-}
-
-.settings-launcher-button:hover {
-  background: #222a39;
 }
 
 .settings-launcher-version {
@@ -64,8 +61,24 @@ body {
   color: #6f7991;
 }
 
-.settings-launcher-text {
+.settings-launcher-link {
+  background: transparent;
+  border: none;
+  padding: 0;
   color: #b9c2db;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-launcher-link:hover {
+  color: #f5f7fb;
+  text-decoration: underline;
+}
+
+.settings-launcher-link:focus-visible {
+  outline: 2px solid rgba(61, 214, 140, 0.8);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .container {

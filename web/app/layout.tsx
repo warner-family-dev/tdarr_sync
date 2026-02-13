@@ -12,10 +12,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <header className="header">
-          <div className="header-top-left">
+          <div className="header-title-row">
+            <h1>Tdarr Sync Dashboard</h1>
             <SettingsLauncher />
           </div>
-          <h1>Tdarr Sync Dashboard</h1>
           <p className="subtitle">Monitor Sonarr/Radarr ➜ Tdarr ➜ Library operations</p>
         </header>
         <main className="container">{children}</main>

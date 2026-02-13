@@ -57,7 +57,7 @@ Shared volumes:
    ```bash
    docker compose logs -f api
    ```
-6. In the top-left header, open **Settings** and define your tag-to-flow routes (for both Sonarr and Radarr). Tdarr server URL/IP and API key are managed there.
+6. In the top-right header control (`branch (commit-date) | Settings`), open **Settings** and define your tag-to-flow routes (for both Sonarr and Radarr). Tdarr server URL/IP and API key are managed there.
 
 Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
 
@@ -96,7 +96,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `RUNTIME_SETTINGS_FILE` — JSON file persisted in `/data` which stores UI-managed routing settings (Tdarr server/IP, API key, tag/flow routes).
 - `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
 - `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
-- `APP_GIT_VERSION`, `APP_GIT_COMMIT_DATE`, `APP_GIT_COMMIT_SHA` — optional metadata shown in the top-left header label. If unset, the API attempts to read git info directly.
+- `APP_GIT_VERSION`, `APP_GIT_COMMIT_DATE`, `APP_GIT_COMMIT_SHA` — optional metadata shown in the top-right header label. If unset, the API attempts to read git info directly (including a `.git` metadata fallback in Docker builds).
 - Sonarr/Radarr paths mirror the script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, `RADARR_BASE_PATH`, `RADARR_LOCAL_MOUNT_BASE_PATH`, etc.).
 
 ### Manual sync controls
@@ -116,8 +116,8 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
 - Provides a manual trigger form with dry-run and per-series/season selection options — the UI calls the API directly.
-- Top-left **Settings** window includes Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow rules.
-- Top-left header label shows the running git version and last commit date.
+- Top-right **Settings** window includes Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow rules.
+- Top-right header label shows the running git version and last commit date in `branch (commit-date) | Settings` format.
 - Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.
 
 ---
@@ -129,7 +129,7 @@ All endpoints return JSON.
 | Endpoint | Method | Description |
 | --- | --- | --- |
 | `/health` | GET | Liveness probe. |
-| `/version` | GET | Returns git/version metadata used by the top-left header label. |
+| `/version` | GET | Returns git/version metadata used by the top-right header label. |
 | `/config` | GET | Sanitised snapshot of active configuration (no secrets exposed). |
 | `/processed-files?limit=50&offset=0` | GET | Recent processed files ordered by newest first. |
 | `/metrics/summary` | GET | Aggregate counts and database metadata. |

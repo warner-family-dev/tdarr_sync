@@ -57,11 +57,13 @@ export default function SettingsLauncher() {
 
   return (
     <>
-      <button type="button" className="settings-launcher-button" onClick={() => setOpen(true)}>
+      <div className="settings-launcher">
         <span className="settings-launcher-version">{versionLabel}</span>
         <span className="settings-launcher-sep">|</span>
-        <span className="settings-launcher-text">Settings</span>
-      </button>
+        <button type="button" className="settings-launcher-link" onClick={() => setOpen(true)}>
+          Settings
+        </button>
+      </div>
       {open && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal settings-modal">

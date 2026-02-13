@@ -6,13 +6,15 @@ All notable changes to this project will be documented in this file.
 - Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.
 - Added dashboard Routing Settings editor for managing route order, source, tag, flow name, and Tdarr input subdirectory.
 - Added Radarr copy-phase support so tagged movies can be routed into Tdarr alongside Sonarr content.
-- Added `/version` API endpoint and top-left header label displaying git version + last commit date.
-- Added dedicated Settings modal opened from the top-left header and moved routing controls into that modal.
+- Added `/version` API endpoint and header label displaying git version + last commit date.
+- Added dedicated Settings modal opened from the header and moved routing controls into that modal.
+- Added API fallback parsing of `.git` metadata files so branch/date can resolve in Docker even when the `git` binary is unavailable.
 
 ### Changed
 - Refactored copy/restore pipeline to support route-based input subfolders and source prefixes while preserving existing backup/retention behavior.
 - Worker/API Docker mounts now include dedicated Sonarr and Radarr library mounts (`SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`) with fallback compatibility.
 - Updated docs and environment template for Radarr settings, runtime settings file, and route-driven workflows.
+- Header control now renders on the right of `Tdarr Sync Dashboard` as `branch (commit-date) | Settings`, and only `Settings` opens the modal.
 
 ## [2.0.4] - 2025-01-29
 ### Added
