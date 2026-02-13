@@ -1,10 +1,6 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-### Changed
-- Updated `docker-compose.yml` so `web` waits for a healthy `api` service before startup, reducing transient DNS/proxy errors during restarts.
-
 ## [2.2.0] - 2026-02-13
 ### Added
 - Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.
@@ -20,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Updated docs and environment template for Radarr settings, runtime settings file, and route-driven workflows.
 - Header control now renders on the right of `Tdarr Sync Dashboard` as `branch (commit-date) | Settings`, and only `Settings` opens the modal.
 - Removed boxed styling from the header version/settings control so it displays as inline text.
+- Updated `docker-compose.yml` so `web` waits for a healthy `api` service before startup, reducing transient DNS/proxy errors during restarts.
 
 ## [2.0.4] - 2025-01-29
 ### Added
@@ -112,7 +109,6 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
-[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...HEAD
 [2.2.0]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...v2.2.0
 [2.0.4]: https://github.com/keatre/tdarr_sync/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...v2.0.3
