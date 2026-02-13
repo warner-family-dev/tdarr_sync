@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Worker/API Docker mounts now include dedicated Sonarr and Radarr library mounts (`SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`) with fallback compatibility.
 - Updated docs and environment template for Radarr settings, runtime settings file, and route-driven workflows.
 - Header control now renders on the right of `Tdarr Sync Dashboard` as `branch (commit-date) | Settings`, and only `Settings` opens the modal.
+- Removed boxed styling from the header version/settings control so it displays as inline text.
 
 ## [2.0.4] - 2025-01-29
 ### Added
