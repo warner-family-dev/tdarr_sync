@@ -17,6 +17,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 class Settings:
     tz: str = field(default_factory=lambda: os.getenv("TZ", "UTC"))
     state_db_file: Path = field(default_factory=lambda: Path(os.getenv("STATE_DB_FILE", "/data/sonarr_tdarr_state.db")))
+    runtime_settings_file: Path = field(default_factory=lambda: Path(os.getenv("RUNTIME_SETTINGS_FILE", "/data/runtime_settings.json")))
     log_file: Optional[Path] = field(default=None)
     sync_script_path: Path = field(default_factory=lambda: Path(os.getenv("SYNC_SCRIPT_PATH", "/app/tdarr_sync.py")))
     sync_python_executable: str = field(default_factory=lambda: os.getenv("SYNC_PYTHON_EXECUTABLE", sys.executable or "python"))
@@ -56,6 +57,7 @@ class Settings:
         return {
             "tz": self.tz,
             "state_db_file": str(self.state_db_file),
+            "runtime_settings_file": str(self.runtime_settings_file),
             "log_file": str(self.log_file) if self.log_file else None,
             "sync_script_path": str(self.sync_script_path),
             "cors_allow_all": self.allow_all_cors,
@@ -64,6 +66,11 @@ class Settings:
                 "url": os.getenv("SONARR_URL", ""),
                 "tag_name": os.getenv("SONARR_TAG_NAME", ""),
                 "api_key_configured": bool(os.getenv("SONARR_API_KEY")),
+            },
+            "radarr": {
+                "url": os.getenv("RADARR_URL", ""),
+                "tag_name": os.getenv("RADARR_TAG_NAME", ""),
+                "api_key_configured": bool(os.getenv("RADARR_API_KEY")),
             },
             "tdarr": {
                 "base_dir": os.getenv("BASE_DIR", ""),

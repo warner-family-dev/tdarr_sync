@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <header className="header">
           <h1>Tdarr Sync Dashboard</h1>
-          <p className="subtitle">Monitor Sonarr ➜ Tdarr ➜ Library operations</p>
+          <p className="subtitle">Monitor Sonarr/Radarr ➜ Tdarr ➜ Library operations</p>
         </header>
         <main className="container">{children}</main>
         <footer className="footer">© {new Date().getFullYear()} Tdarr Sync</footer>

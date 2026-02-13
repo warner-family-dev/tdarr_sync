@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Added
+- Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.
+- Added dashboard Routing Settings editor for managing route order, source, tag, flow name, and Tdarr input subdirectory.
+- Added Radarr copy-phase support so tagged movies can be routed into Tdarr alongside Sonarr content.
+
+### Changed
+- Refactored copy/restore pipeline to support route-based input subfolders and source prefixes while preserving existing backup/retention behavior.
+- Worker/API Docker mounts now include dedicated Sonarr and Radarr library mounts (`SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`) with fallback compatibility.
+- Updated docs and environment template for Radarr settings, runtime settings file, and route-driven workflows.
+
 ## [2.0.4] - 2025-01-29
 ### Added
 - Added Release Drafter, CI checks (Ruff/Pytest), and a local code-check script with logging to `logs/tdarr_sync_build.log`.
@@ -92,7 +103,9 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
-[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/keatre/tdarr_sync/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/keatre/tdarr_sync/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/keatre/tdarr_sync/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/keatre/tdarr_sync/compare/v1.1.0...v2.0.0

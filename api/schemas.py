@@ -46,6 +46,19 @@ class SyncRunRequest(BaseModel):
     selections: Optional[List[SyncSelectionPayload]] = None
 
 
+class TagFlowRoute(BaseModel):
+    source: Literal["sonarr", "radarr"]
+    tag: str = Field(..., min_length=1)
+    flow_name: str = Field(..., min_length=1)
+    input_subdir: Optional[str] = None
+
+
+class RoutingSettings(BaseModel):
+    tdarr_server_url: str = ""
+    tdarr_api_key: str = ""
+    routes: List[TagFlowRoute] = Field(default_factory=list)
+
+
 class RestoreSeasonEntry(BaseModel):
     number: int
     name: str
@@ -132,10 +145,13 @@ class RestoreJobStatus(BaseModel):
 
 RestoreRunResponse = RestoreResponse | RestoreTriggerResponse
 
-if hasattr(RestoreJobStatus, "model_rebuild"):
-    RestoreJobStatus.model_rebuild()
+_model_rebuild = getattr(RestoreJobStatus, "model_rebuild", None)
+if callable(_model_rebuild):
+    _model_rebuild()
 else:  # Pydantic v1 fallback
-    RestoreJobStatus.update_forward_refs()
+    _update_forward_refs = getattr(RestoreJobStatus, "update_forward_refs", None)
+    if callable(_update_forward_refs):
+        _update_forward_refs()
 
 
 def to_iso(timestamp: Optional[int], tz) -> Optional[str]:
