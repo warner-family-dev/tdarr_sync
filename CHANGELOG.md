@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Header control now renders on the right of `Tdarr Sync Dashboard` as `branch (commit-date) | Settings`, and only `Settings` opens the modal.
 - Removed boxed styling from the header version/settings control so it displays as inline text.
 - Updated `docker-compose.yml` so `web` waits for a healthy `api` service before startup, reducing transient DNS/proxy errors during restarts.
+- Temporarily disabled `remux` tag routes in the sync pipeline so tagged files are skipped for copy and restore downstream handling.
 
 ## [2.0.4] - 2025-01-29
 ### Added

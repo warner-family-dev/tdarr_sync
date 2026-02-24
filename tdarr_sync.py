@@ -79,6 +79,8 @@ SOURCE_PREFIXES = {
     "sonarr": "__sonarr_input__",
     "radarr": "__radarr_input__",
 }
+# Temporary route-tag block list. Any matching routes are ignored for copy + restore handling.
+TEMP_DISABLED_ROUTE_TAGS = {"remux"}
 
 # -------------------- Logging --------------------
 log_path = Path(LOG_FILE)
@@ -210,6 +212,52 @@ def _normalize_tag_ids(raw_tags: object) -> List[int]:
     return normalized
 
 
+def _route_tag(route: Dict[str, object]) -> str:
+    return str(route.get("tag", "")).strip().lower()
+
+
+def _partition_routes_by_disabled_tag(
+    routes: List[Dict[str, str]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    enabled: List[Dict[str, str]] = []
+    disabled: List[Dict[str, str]] = []
+    for route in routes:
+        if _route_tag(route) in TEMP_DISABLED_ROUTE_TAGS:
+            disabled.append(route)
+        else:
+            enabled.append(route)
+    return enabled, disabled
+
+
+def _log_disabled_routes(disabled_routes: List[Dict[str, str]], *, scope: str) -> None:
+    if not disabled_routes:
+        return
+    tags = sorted({_route_tag(route) for route in disabled_routes if _route_tag(route)})
+    logger.warning(
+        "Temporarily disabled %d %s route(s) for blocked tag(s): %s",
+        len(disabled_routes),
+        scope,
+        ", ".join(tags),
+    )
+
+
+def _disabled_route_input_subdirs(runtime_settings: Dict[str, object]) -> Set[str]:
+    disabled_subdirs: Set[str] = set()
+    configured_routes = runtime_settings.get("routes", [])
+    if not isinstance(configured_routes, list):
+        return disabled_subdirs
+
+    for route in configured_routes:
+        if not isinstance(route, dict):
+            continue
+        if _route_tag(route) not in TEMP_DISABLED_ROUTE_TAGS:
+            continue
+        input_subdir = str(route.get("input_subdir", "")).strip()
+        if input_subdir:
+            disabled_subdirs.add(input_subdir)
+    return disabled_subdirs
+
+
 def _route_input_root(route: Dict[str, str], source: str) -> Path:
     parts = [TDARR_INPUT_DIR]
     input_subdir = route.get("input_subdir", "").strip()
@@ -329,9 +377,15 @@ def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bo
         for route in configured_routes:
             if isinstance(route, dict):
                 routes.append(route)
-        if routes:
-            logger.info("Loaded %d route rules from %s", len(routes), RUNTIME_SETTINGS_FILE)
-            return runtime_settings, routes, False
+        enabled_routes, disabled_routes = _partition_routes_by_disabled_tag(routes)
+        _log_disabled_routes(disabled_routes, scope="UI")
+        logger.info(
+            "Loaded %d active route rule(s) from %s%s",
+            len(enabled_routes),
+            RUNTIME_SETTINGS_FILE,
+            f" ({len(disabled_routes)} temporarily disabled)" if disabled_routes else "",
+        )
+        return runtime_settings, enabled_routes, False
 
     # Legacy fallback keeps existing behaviour if UI rules have not been configured yet.
     fallback_routes: List[Dict[str, str]] = []
@@ -353,15 +407,19 @@ def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bo
                 "input_subdir": "",
             }
         )
-    if fallback_routes:
+    enabled_fallback, disabled_fallback = _partition_routes_by_disabled_tag(fallback_routes)
+    _log_disabled_routes(disabled_fallback, scope="legacy")
+    if enabled_fallback:
         logger.info(
             "No UI routes configured in %s; using %d legacy env-based route(s).",
             RUNTIME_SETTINGS_FILE,
-            len(fallback_routes),
+            len(enabled_fallback),
         )
+    elif disabled_fallback:
+        logger.warning("No active legacy routes after temporary tag suppression.")
     else:
         logger.warning("No routes configured in runtime settings or environment.")
-    return runtime_settings, fallback_routes, True
+    return runtime_settings, enabled_fallback, True
 
 
 def _group_routes_by_source(routes: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
@@ -711,7 +769,13 @@ def move_tdarr_output_back(dry_run=False):
         logger.info("Tdarr output dir does not exist: %s", TDARR_OUTPUT_DIR)
         return
 
-    _, routes, _ = load_effective_routes()
+    runtime_settings, routes, _ = load_effective_routes()
+    disabled_input_subdirs = _disabled_route_input_subdirs(runtime_settings)
+    if disabled_input_subdirs:
+        logger.info(
+            "RESTORE: skipping disabled-tag subdir(s): %s",
+            ", ".join(sorted(disabled_input_subdirs)),
+        )
     logger.info("RESTORE: scanning %s", TDARR_OUTPUT_DIR)
     for out_path in TDARR_OUTPUT_DIR.rglob("*"):
         if out_path.is_dir():
@@ -720,6 +784,9 @@ def move_tdarr_output_back(dry_run=False):
             rel = out_path.relative_to(TDARR_OUTPUT_DIR)
         except Exception:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
+            continue
+        if rel.parts and rel.parts[0] in disabled_input_subdirs:
+            logger.info("RESTORE: skip output under disabled-tag subdir %s: %s", rel.parts[0], out_path)
             continue
 
         library_base, relative_to_library = _resolve_restore_destination(rel, routes)
