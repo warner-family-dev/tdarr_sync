@@ -124,10 +124,116 @@ body {
   font-size: 0.95rem;
 }
 
-.metrics span {
+.metrics > span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 1.5rem;
+}
+
+.metrics > span > strong,
+.metrics > span > .status {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrics > span > strong {
+  font-size: 0.92rem;
+}
+
+.sync-progress-panel,
+.tdarr-worker {
+  margin-top: 1rem;
+  border: 1px solid #273042;
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: rgba(12, 16, 24, 0.5);
+}
+
+.tdarr-node {
+  margin-top: 1rem;
+}
+
+.tdarr-node-header {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
+  align-items: baseline;
+  padding-top: 0.25rem;
+}
+
+.tdarr-node-header span {
+  color: #9aa4c1;
+  font-size: 0.85rem;
+}
+
+.sync-progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.55rem;
+}
+
+.sync-progress-header span {
+  color: #9aa4c1;
+  font-size: 0.85rem;
+}
+
+.sync-progress-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(61, 214, 140, 0.12);
+  overflow: hidden;
+}
+
+.sync-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3dd68c, #4c8df6);
+  transition: width 0.25s ease;
+}
+
+.sync-progress-indeterminate {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(61, 214, 140, 0.35), #3dd68c);
+  animation: progress-indeterminate 1.2s infinite;
+}
+
+.sync-progress-meta {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  color: #9aa4c1;
+  font-size: 0.82rem;
+}
+
+.sync-progress-current {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.sync-progress-current code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: #c7cee2;
+  background: #10131a;
+  border: 1px solid #273042;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
 }
 
 .table-wrapper {

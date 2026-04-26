@@ -18,6 +18,7 @@ class Settings:
     tz: str = field(default_factory=lambda: os.getenv("TZ", "UTC"))
     state_db_file: Path = field(default_factory=lambda: Path(os.getenv("STATE_DB_FILE", "/data/sonarr_tdarr_state.db")))
     runtime_settings_file: Path = field(default_factory=lambda: Path(os.getenv("RUNTIME_SETTINGS_FILE", "/data/runtime_settings.json")))
+    sync_progress_file: Path = field(default_factory=lambda: Path(os.getenv("SYNC_PROGRESS_FILE", "/data/sync_progress.json")))
     log_file: Optional[Path] = field(default=None)
     sync_script_path: Path = field(default_factory=lambda: Path(os.getenv("SYNC_SCRIPT_PATH", "/app/tdarr_sync.py")))
     sync_python_executable: str = field(default_factory=lambda: os.getenv("SYNC_PYTHON_EXECUTABLE", sys.executable or "python"))
@@ -58,6 +59,7 @@ class Settings:
             "tz": self.tz,
             "state_db_file": str(self.state_db_file),
             "runtime_settings_file": str(self.runtime_settings_file),
+            "sync_progress_file": str(self.sync_progress_file),
             "log_file": str(self.log_file) if self.log_file else None,
             "sync_script_path": str(self.sync_script_path),
             "cors_allow_all": self.allow_all_cors,

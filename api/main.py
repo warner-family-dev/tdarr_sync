@@ -12,6 +12,8 @@ from . import db, schemas
 from .build_version import resolve_build_version
 from .settings import settings
 from .sync_runner import SyncAlreadyRunningError, SyncRunner
+from .tdarr_client import fetch_tdarr_status
+from sync_progress import read_progress_file
 from runtime_settings import load_runtime_settings, save_runtime_settings
 from .restore_service import (
     RestoreAuthError,
@@ -65,7 +67,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-runner = SyncRunner(settings.sync_script_path, settings.sync_python_executable)
+runner = SyncRunner(settings.sync_script_path, settings.sync_python_executable, settings.sync_progress_file)
 
 try:
     restore_service = RestoreService()
@@ -164,6 +166,10 @@ def metrics_summary():
 def sync_status():
     status = runner.status()
     tz = settings.zoneinfo
+    progress = read_progress_file(settings.sync_progress_file)
+    if progress:
+        for key in ("started_at", "phase_started_at", "updated_at", "finished_at"):
+            progress[f"{key}_iso"] = schemas.to_iso(progress.get(key), tz)
     return schemas.SyncStatus(
         running=status["running"],
         last_started_at=status["last_started_at"],
@@ -172,6 +178,8 @@ def sync_status():
         last_finished_at_iso=schemas.to_iso(status["last_finished_at"], tz),
         last_exit_code=status["last_exit_code"],
         last_error=status["last_error"],
+        progress=progress,
+        tdarr=fetch_tdarr_status(settings.runtime_settings_file),
     )
 
 
