@@ -126,10 +126,9 @@ body {
 
 .metrics > span {
   display: grid;
-  grid-template-columns: max-content max-content;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: baseline;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
 .metrics > span > strong,
@@ -137,6 +136,11 @@ body {
   justify-self: end;
   text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrics > span > strong {
+  font-size: 0.92rem;
 }
 
 .sync-progress-panel,
