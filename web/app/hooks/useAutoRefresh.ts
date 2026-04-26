@@ -12,6 +12,8 @@ export type SyncStatus = {
   last_finished_at_iso?: string | null;
   last_exit_code: number | null;
   last_error: string | null;
+  progress?: unknown;
+  tdarr?: unknown;
 };
 
 const serialize = (status: SyncStatus | null) => JSON.stringify(status ?? {});

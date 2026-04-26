@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.2.1] - 2026-04-26
+### Added
+- Added sync progress snapshots at `SYNC_PROGRESS_FILE` so active runs report phase, current item, counts, percent complete, skipped/failed totals, and best-effort ETA.
+- Added Tdarr queue status to `/sync/status`, including reachability, queue/error counts, active workers, current worker file, worker progress, and ETA when available.
+- Added dashboard progress and Tdarr queue panels to show what tdarr-sync and Tdarr are currently processing.
+
 ## [2.2.0] - 2026-02-13
 ### Added
 - Added UI-managed routing settings (`/settings/routing`) so Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow routes are persisted in `/data/runtime_settings.json`.

@@ -95,6 +95,7 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `TZ` — propagated to all containers; controls timestamps and log formatting.
 - `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
 - `RUNTIME_SETTINGS_FILE` — JSON file persisted in `/data` which stores UI-managed routing settings (Tdarr server/IP, API key, tag/flow routes).
+- `SYNC_PROGRESS_FILE` — JSON progress snapshot written by active sync runs and read by the API/dashboard (default `/data/sync_progress.json`).
 - `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
 - `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
 - `APP_GIT_VERSION`, `APP_GIT_COMMIT_DATE`, `APP_GIT_COMMIT_SHA` — optional metadata shown in the top-right header label. If unset, the API attempts to read git info directly (including a `.git` metadata fallback in Docker builds).
@@ -116,6 +117,8 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Built with Next.js 14 + React 18.
 - Dark theme, responsive layout, quick stats panel.
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
+- Shows the active tdarr-sync phase, current title/path, progress bar, item counts, skipped/failed counts, and best-effort ETA.
+- Shows Tdarr queue reachability, active worker details, queue/error counts, worker progress, and worker ETA when Tdarr API settings are configured.
 - Provides a manual trigger form with dry-run and per-series/season selection options — the UI calls the API directly.
 - Top-right **Settings** window includes Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow rules.
 - Top-right header label shows the running git version and last commit date in `branch (commit-date) | Settings` format.
@@ -134,7 +137,7 @@ All endpoints return JSON.
 | `/config` | GET | Sanitised snapshot of active configuration (no secrets exposed). |
 | `/processed-files?limit=50&offset=0` | GET | Recent processed files ordered by newest first. |
 | `/metrics/summary` | GET | Aggregate counts and database metadata. |
-| `/sync/status` | GET | Current/manual sync status (running flag, timestamps, last exit code). |
+| `/sync/status` | GET | Current/manual sync status, progress snapshot, and Tdarr queue/worker status when configured. |
 | `/sync/run?dry_run=true` | POST | Trigger an immediate sync. Accepts `dry_run` via query or JSON body and supports structured selections (see below). Returns `409` if a run is already in-flight. |
 | `/settings/routing` | GET/PUT | Read/update UI-managed Tdarr server settings and ordered Sonarr/Radarr tag-to-flow routes. |
 

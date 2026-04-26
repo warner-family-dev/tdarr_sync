@@ -12,6 +12,7 @@ services:
       TZ: ${TZ}
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
+      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/data/sync_progress.json}
     volumes:
       - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
       - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
@@ -35,6 +36,7 @@ services:
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
       SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
+      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/data/sync_progress.json}
     volumes:
       - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
       - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
