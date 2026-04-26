@@ -37,11 +37,22 @@ class TdarrWorkerStatus(BaseModel):
     id: str
     name: str = ""
     node: str = ""
+    node_id: str = ""
     status: str = ""
     file: Optional[str] = None
     title: Optional[str] = None
     progress: Optional[float] = None
     eta_seconds: Optional[int] = None
+
+
+class TdarrNodeStatus(BaseModel):
+    id: str
+    name: str
+    address: str = ""
+    paused: bool = False
+    worker_limit: int = 0
+    active_worker_count: int = 0
+    workers: List[TdarrWorkerStatus] = Field(default_factory=list)
 
 
 class TdarrStatus(BaseModel):
@@ -53,6 +64,7 @@ class TdarrStatus(BaseModel):
     error_count: Optional[int] = None
     active_worker_count: int = 0
     workers: List[TdarrWorkerStatus] = Field(default_factory=list)
+    nodes: List[TdarrNodeStatus] = Field(default_factory=list)
 
 
 class ProcessedFile(BaseModel):

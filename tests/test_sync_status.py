@@ -85,6 +85,7 @@ class SyncStatusApiTests(unittest.TestCase):
                 "error_count": None,
                 "active_worker_count": 0,
                 "workers": [],
+                "nodes": [],
             },
         ):
             mock_status.return_value = {
@@ -97,7 +98,7 @@ class SyncStatusApiTests(unittest.TestCase):
             payload = sync_status()
             self.assertFalse(payload.running)
             self.assertIsNone(payload.progress)
-            self.assertFalse(payload.tdarr["configured"])
+            self.assertFalse(payload.tdarr.configured)
 
     def test_sync_status_includes_progress(self):
         progress = {
@@ -127,6 +128,7 @@ class SyncStatusApiTests(unittest.TestCase):
                 "error_count": None,
                 "active_worker_count": 0,
                 "workers": [],
+                "nodes": [],
             },
         ):
             mock_status.return_value = {
@@ -138,9 +140,9 @@ class SyncStatusApiTests(unittest.TestCase):
             }
             payload = sync_status()
             self.assertTrue(payload.running)
-            self.assertEqual(payload.progress["run_id"], "abc")
-            self.assertEqual(payload.progress["percent"], 50.0)
-            self.assertFalse(payload.tdarr["reachable"])
+            self.assertEqual(payload.progress.run_id, "abc")
+            self.assertEqual(payload.progress.percent, 50.0)
+            self.assertFalse(payload.tdarr.reachable)
 
 
 class TdarrClientTests(unittest.TestCase):
@@ -165,6 +167,73 @@ class TdarrClientTests(unittest.TestCase):
         self.assertEqual(crud_call[2]["json"]["data"]["mode"], "getAll")
         self.assertTrue(payload["reachable"])
         self.assertIsNone(payload["error"])
+        self.assertEqual(payload["active_worker_count"], 0)
+
+    def test_tdarr_health_status_is_not_reported_as_worker(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+
+        def fake_request(method, path, **kwargs):
+            if path == "/api/v2/status":
+                return {"status": "good"}
+            if path == "/api/v2/get-nodes":
+                return {
+                    "node-1": {
+                        "_id": "node-1",
+                        "nodeName": "Server-Node",
+                        "nodePaused": False,
+                        "workerLimits": {"transcodegpu": 3},
+                        "workers": {},
+                    }
+                }
+            if path == "/api/v2/cruddb":
+                return {}
+            raise AssertionError(path)
+
+        with patch.object(client, "_request_json", side_effect=fake_request):
+            payload = client.fetch_status()
+
+        self.assertEqual(payload["active_worker_count"], 0)
+        self.assertEqual(payload["workers"], [])
+        self.assertEqual(payload["nodes"][0]["name"], "Server-Node")
+        self.assertEqual(payload["nodes"][0]["workers"], [])
+
+    def test_tdarr_workers_are_grouped_under_nodes(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+
+        def fake_request(method, path, **kwargs):
+            if path == "/api/v2/status":
+                return {"status": "good"}
+            if path == "/api/v2/get-nodes":
+                return {
+                    "node-1": {
+                        "_id": "node-1",
+                        "nodeName": "Windows-Node",
+                        "remoteAddress": "192.0.2.10",
+                        "nodePaused": False,
+                        "workerLimits": {"transcodecpu": 0, "transcodegpu": 6, "healthcheckgpu": 2},
+                        "workers": {
+                            "male-mutt": {
+                                "status": "Running transcode",
+                                "currentFile": "/media/input/show.mkv",
+                                "percentage": 0.5,
+                                "etaSeconds": 90,
+                            }
+                        },
+                    }
+                }
+            if path == "/api/v2/cruddb":
+                return {}
+            raise AssertionError(path)
+
+        with patch.object(client, "_request_json", side_effect=fake_request):
+            payload = client.fetch_status()
+
+        self.assertEqual(payload["active_worker_count"], 1)
+        self.assertEqual(payload["nodes"][0]["name"], "Windows-Node")
+        self.assertEqual(payload["nodes"][0]["worker_limit"], 6)
+        self.assertEqual(payload["nodes"][0]["workers"][0]["id"], "male-mutt")
+        self.assertEqual(payload["nodes"][0]["workers"][0]["node"], "Windows-Node")
+        self.assertEqual(payload["nodes"][0]["workers"][0]["progress"], 50.0)
 
 
 if __name__ == "__main__":

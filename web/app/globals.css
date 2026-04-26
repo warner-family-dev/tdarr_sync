@@ -139,6 +139,23 @@ body {
   background: rgba(12, 16, 24, 0.5);
 }
 
+.tdarr-node {
+  margin-top: 1rem;
+}
+
+.tdarr-node-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+  padding-top: 0.25rem;
+}
+
+.tdarr-node-header span {
+  color: #9aa4c1;
+  font-size: 0.85rem;
+}
+
 .sync-progress-header {
   display: flex;
   justify-content: space-between;

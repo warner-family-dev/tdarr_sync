@@ -55,11 +55,22 @@ type TdarrWorkerStatus = {
   id: string;
   name: string;
   node: string;
+  node_id: string;
   status: string;
   file: string | null;
   title: string | null;
   progress: number | null;
   eta_seconds: number | null;
+};
+
+type TdarrNodeStatus = {
+  id: string;
+  name: string;
+  address: string;
+  paused: boolean;
+  worker_limit: number;
+  active_worker_count: number;
+  workers: TdarrWorkerStatus[];
 };
 
 type TdarrStatus = {
@@ -71,6 +82,7 @@ type TdarrStatus = {
   error_count: number | null;
   active_worker_count: number;
   workers: TdarrWorkerStatus[];
+  nodes: TdarrNodeStatus[];
 };
 
 const DISPLAY_TIMEZONE = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -174,6 +186,30 @@ function phaseLabel(phase: string | undefined): string {
   }
 }
 
+function fileName(path: string | null | undefined): string {
+  if (!path) {
+    return "";
+  }
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.split("/").filter(Boolean).pop() ?? path;
+}
+
+function isVisibleTdarrWorker(worker: TdarrWorkerStatus): boolean {
+  if (worker.file || worker.title) {
+    return true;
+  }
+  if (worker.progress !== null && worker.progress < 100) {
+    return true;
+  }
+  const status = worker.status.trim().toLowerCase();
+  if (!status || ["good", "idle", "ready", "online", "connected", "unknown", "available", "inactive"].includes(status)) {
+    return false;
+  }
+  return ["running", "transcod", "health", "process", "ffmpeg", "handbrake", "mkvpropedit", "copy", "scan", "work"].some((token) =>
+    status.includes(token),
+  );
+}
+
 function ProgressBar({ percent }: { percent: number | null | undefined }) {
   if (percent === null || percent === undefined) {
     return (
@@ -191,6 +227,13 @@ function ProgressBar({ percent }: { percent: number | null | undefined }) {
 
 export default async function DashboardPage() {
   const { summary, files, status, error } = await loadDashboardData();
+  const tdarrNodes = status?.tdarr?.nodes ?? [];
+  const activeTdarrNodes = tdarrNodes
+    .map((node) => ({ ...node, workers: node.workers.filter(isVisibleTdarrWorker) }))
+    .filter((node) => node.workers.length > 0);
+  const fallbackTdarrWorkers =
+    activeTdarrNodes.length === 0 && status?.tdarr?.workers ? status.tdarr.workers.filter(isVisibleTdarrWorker) : [];
+
   return (
     <div>
       <AutoRefresh initialStatus={status} intervalMs={5000} />
@@ -303,24 +346,55 @@ export default async function DashboardPage() {
                 <strong>{status.tdarr.error_count ?? "—"}</strong>
               </span>
               {status.tdarr.error && <p className="muted">{status.tdarr.error}</p>}
-              {status.tdarr.workers.length === 0 && <p className="muted">No active worker details reported.</p>}
-              {status.tdarr.workers.map((worker) => (
-                <div key={`${worker.id}-${worker.file ?? worker.title ?? worker.status}`} className="tdarr-worker">
-                  <div className="sync-progress-header">
-                    <strong>{worker.name || worker.id}</strong>
-                    <span>{worker.progress !== null ? `${worker.progress.toFixed(1)}%` : worker.status || "active"}</span>
+              {activeTdarrNodes.length === 0 && fallbackTdarrWorkers.length === 0 && <p className="muted">No active transcodes reported.</p>}
+              {activeTdarrNodes.map((node) => (
+                <div key={node.id} className="tdarr-node">
+                  <div className="tdarr-node-header">
+                    <strong>{node.name}</strong>
+                    <span>
+                      {node.workers.length}
+                      {node.worker_limit ? ` / ${node.worker_limit}` : ""} active
+                    </span>
                   </div>
-                  <ProgressBar percent={worker.progress} />
-                  <div className="sync-progress-meta">
-                    {worker.node && <span>Node: {worker.node}</span>}
-                    <span>ETA: {formatDuration(worker.eta_seconds)}</span>
-                  </div>
-                  <div className="sync-progress-current">
-                    {worker.title && <strong>{worker.title}</strong>}
-                    {worker.file && <code>{worker.file}</code>}
-                  </div>
+                  {node.workers.map((worker) => (
+                    <div key={`${node.id}-${worker.id}-${worker.file ?? worker.title ?? worker.status}`} className="tdarr-worker">
+                      <div className="sync-progress-header">
+                        <strong>{worker.title || fileName(worker.file) || worker.status || "Active transcode"}</strong>
+                        <span>{worker.progress !== null ? `${worker.progress.toFixed(1)}%` : worker.status || "active"}</span>
+                      </div>
+                      <ProgressBar percent={worker.progress} />
+                      <div className="sync-progress-meta">
+                        {worker.status && <span>{worker.status}</span>}
+                        <span>ETA: {formatDuration(worker.eta_seconds)}</span>
+                      </div>
+                      <div className="sync-progress-current">{worker.file && <code>{worker.file}</code>}</div>
+                    </div>
+                  ))}
                 </div>
               ))}
+              {fallbackTdarrWorkers.length > 0 && (
+                <div className="tdarr-node">
+                  <div className="tdarr-node-header">
+                    <strong>Tdarr server</strong>
+                    <span>{fallbackTdarrWorkers.length} active</span>
+                  </div>
+                  {fallbackTdarrWorkers.map((worker) => (
+                    <div key={`${worker.id}-${worker.file ?? worker.title ?? worker.status}`} className="tdarr-worker">
+                      <div className="sync-progress-header">
+                        <strong>{worker.title || fileName(worker.file) || worker.status || "Active transcode"}</strong>
+                        <span>{worker.progress !== null ? `${worker.progress.toFixed(1)}%` : worker.status || "active"}</span>
+                      </div>
+                      <ProgressBar percent={worker.progress} />
+                      <div className="sync-progress-meta">
+                        {worker.node && <span>{worker.node}</span>}
+                        {worker.status && <span>{worker.status}</span>}
+                        <span>ETA: {formatDuration(worker.eta_seconds)}</span>
+                      </div>
+                      <div className="sync-progress-current">{worker.file && <code>{worker.file}</code>}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </article>
