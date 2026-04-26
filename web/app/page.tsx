@@ -3,6 +3,8 @@ import RestoreOriginals from "./RestoreOriginals";
 import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
 
+export const dynamic = "force-dynamic";
+
 type ProcessedFile = {
   file_path: string;
   processed_at: number | null;
