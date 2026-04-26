@@ -124,10 +124,19 @@ body {
   font-size: 0.95rem;
 }
 
-.metrics span {
-  display: flex;
+.metrics > span {
+  display: grid;
+  grid-template-columns: max-content max-content;
   justify-content: space-between;
+  align-items: baseline;
   gap: 1rem;
+}
+
+.metrics > span > strong,
+.metrics > span > .status {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .sync-progress-panel,
