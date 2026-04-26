@@ -52,7 +52,7 @@ Shared volumes:
    docker compose up -d --build
    ```
 4. Visit the dashboard at `http://localhost:${WEB_PORT}` (defaults to `3000`).  
-   API docs/health are available at `http://localhost:${API_PORT}/health` (defaults to `8000`).
+   Health is available at `http://localhost:${API_PORT}/health` (defaults to `8000`). Other API endpoints require `Authorization: Bearer $API_AUTH_TOKEN`.
 5. Check logs when needed:
    ```bash
    docker compose logs -f api
@@ -60,7 +60,7 @@ Shared volumes:
 6. In the top-right header control (`branch (commit-date) | Settings`), open **Settings** and define your tag-to-flow routes (for both Sonarr and Radarr). Tdarr server URL/IP and API key are managed there.
 7. Starting with `v2.2.0`, Tdarr API-key auth must be enabled in Tdarr before routing features work. Tdarr ships with API keys disabled by default, so enable it in Tdarr first, then paste the key into **Settings**.
 
-Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly.
+Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly with the configured bearer token.
 
 ### Scheduling with cron (Docker)
 
@@ -97,7 +97,10 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - `RUNTIME_SETTINGS_FILE` — JSON file persisted in `/data` which stores UI-managed routing settings (Tdarr server/IP, API key, tag/flow routes).
 - `SYNC_PROGRESS_FILE` — JSON progress snapshot written by active sync runs and read by the API/dashboard (default `/data/sync_progress.json`).
 - `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
-- `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the web client proxy should forward to; defaults to the in-cluster `http://api:8000`.
+- `API_AUTH_TOKEN` — required shared bearer token for every API endpoint except `/health`; use a long random value.
+- `API_CORS_ALLOW_ALL` — defaults to `false`; keep disabled unless you understand the exposure.
+- `API_CORS_ALLOW_ORIGINS` — comma-separated browser origins allowed to call the API directly; defaults to `http://localhost:3000`.
+- `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the server-side web proxy should forward to; defaults to the in-cluster `http://api:8000`.
 - `APP_GIT_VERSION`, `APP_GIT_COMMIT_DATE`, `APP_GIT_COMMIT_SHA` — optional metadata shown in the top-right header label. If unset, the API attempts to read git info directly (including a `.git` metadata fallback in Docker builds).
 - Sonarr/Radarr paths mirror the script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, `RADARR_BASE_PATH`, `RADARR_LOCAL_MOUNT_BASE_PATH`, etc.).
 
@@ -119,16 +122,16 @@ Everything runs from `.env` — the file is not checked into Git (see `.env.exam
 - Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
 - Shows the active tdarr-sync phase, current title/path, progress bar, item counts, skipped/failed counts, and best-effort ETA.
 - Shows Tdarr queue reachability, active worker details, queue/error counts, worker progress, and worker ETA when Tdarr API settings are configured.
-- Provides a manual trigger form with dry-run and per-series/season selection options — the UI calls the API directly.
+- Provides a manual trigger form with dry-run and per-series/season selection options.
 - Top-right **Settings** window includes Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow rules.
 - Top-right header label shows the running git version and last commit date in `branch (commit-date) | Settings` format.
-- Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker). Override this variable if your browser needs to reach the API via a different hostname.
+- Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker) and injects `API_AUTH_TOKEN` server-side so the browser never receives it.
 
 ---
 
 ## REST API (`api/`)
 
-All endpoints return JSON.
+All endpoints return JSON. `/health` is public; every other endpoint requires `Authorization: Bearer $API_AUTH_TOKEN`.
 
 | Endpoint | Method | Description |
 | --- | --- | --- |

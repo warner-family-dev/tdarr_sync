@@ -1,7 +1,3 @@
-function stripTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
-
 function ensureLeadingSlash(path: string): string {
   if (!path.startsWith("/")) {
     return `/${path}`;
@@ -9,29 +5,9 @@ function ensureLeadingSlash(path: string): string {
   return path;
 }
 
-function resolveApiBase(): string {
-  if (typeof window !== "undefined") {
-    const publicOrigin = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-    if (publicOrigin) {
-      return stripTrailingSlash(publicOrigin);
-    }
-  }
-
-  const backendOrigin = process.env.NEXT_BACKEND_ORIGIN?.trim();
-  if (backendOrigin && backendOrigin.length > 0) {
-    return stripTrailingSlash(backendOrigin);
-  }
-
-  return "/tdarr-api";
-}
-
 function buildUrl(path: string): string {
-  const apiBase = resolveApiBase();
   const normalizedPath = ensureLeadingSlash(path);
-  if (apiBase.startsWith("http")) {
-    return `${apiBase}${normalizedPath}`;
-  }
-  return `${apiBase}${normalizedPath}`;
+  return `/tdarr-api${normalizedPath}`;
 }
 
 export function apiUrl(path: string): string {
