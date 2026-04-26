@@ -13,7 +13,8 @@ services:
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library
+      - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
+      - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
@@ -35,7 +36,8 @@ services:
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
       SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
     volumes:
-      - ${HOST_LIBRARY_MOUNT}:/media/library
+      - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
+      - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
@@ -43,6 +45,16 @@ services:
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
     ports:
       - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2).getcode() == 200 else 1)
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
 
   web:
@@ -56,7 +68,8 @@ services:
       TZ: ${TZ}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped

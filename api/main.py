@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from logging.handlers import WatchedFileHandler
 
 from . import db, schemas
+from .build_version import resolve_build_version
 from .settings import settings
 from .sync_runner import SyncAlreadyRunningError, SyncRunner
+from runtime_settings import load_runtime_settings, save_runtime_settings
 from .restore_service import (
     RestoreAuthError,
     RestoreConfigurationError,
@@ -92,6 +94,11 @@ def health():
     return {"status": "ok", "time": _now_iso()}
 
 
+@app.get("/version", response_model=schemas.BuildVersion)
+def get_version():
+    return schemas.BuildVersion(**resolve_build_version())
+
+
 @app.get("/config")
 def get_config():
     data = settings.sanitized()
@@ -99,7 +106,25 @@ def get_config():
         "hostname": os.getenv("HOSTNAME", ""),
         "tz": settings.tz,
     }
+    data["build"] = resolve_build_version()
     return data
+
+
+@app.get("/settings/routing", response_model=schemas.RoutingSettings)
+def get_routing_settings():
+    data = load_runtime_settings(settings.runtime_settings_file)
+    return schemas.RoutingSettings(**data)
+
+
+@app.put("/settings/routing", response_model=schemas.RoutingSettings)
+def update_routing_settings(payload: schemas.RoutingSettings):
+    body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    try:
+        saved = save_runtime_settings(body, settings.runtime_settings_file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
+    return schemas.RoutingSettings(**saved)
 
 
 @app.get("/processed-files", response_model=List[schemas.ProcessedFile])

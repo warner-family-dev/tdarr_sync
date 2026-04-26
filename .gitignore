@@ -21,12 +21,17 @@ logs/
 # Python cache
 __pycache__/
 *.py[cod]
+.pytest_cache
+
+# Ruff
+.ruff_cache
 
 # API build/cache
 /api/.pytest_cache/
 /api/.venv
 /api/whiskey.db
 /api/static/uploads/
+.temp_*
 
 # Web build/cache
 /web/node_modules/

@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import SettingsLauncher from "./SettingsLauncher";
 
 export const metadata = {
   title: "Tdarr Sync Dashboard",
@@ -11,8 +12,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <header className="header">
-          <h1>Tdarr Sync Dashboard</h1>
-          <p className="subtitle">Monitor Sonarr ➜ Tdarr ➜ Library operations</p>
+          <div className="header-title-row">
+            <h1>Tdarr Sync Dashboard</h1>
+            <SettingsLauncher />
+          </div>
+          <p className="subtitle">Monitor Sonarr/Radarr ➜ Tdarr ➜ Library operations</p>
         </header>
         <main className="container">{children}</main>
         <footer className="footer">© {new Date().getFullYear()} Tdarr Sync</footer>
