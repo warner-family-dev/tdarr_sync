@@ -23,6 +23,7 @@ import shutil
 import sqlite3
 import sys
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -30,6 +31,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import requests
 from dotenv import load_dotenv
 from runtime_settings import load_runtime_settings, settings_path_from_env
+from sync_progress import ProgressReporter, progress_path_from_env
 
 # -------------------- ENV --------------------
 load_dotenv()
@@ -71,6 +73,7 @@ try:
 
     STATE_DB_FILE = Path(os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db")).resolve()
     RUNTIME_SETTINGS_FILE = settings_path_from_env().resolve()
+    SYNC_PROGRESS_FILE = progress_path_from_env().resolve()
 except KeyError as e:
     print(f"Missing required environment variable: {e}")
     raise SystemExit(1)
@@ -81,6 +84,41 @@ SOURCE_PREFIXES = {
 }
 # Temporary route-tag block list. Any matching routes are ignored for copy + restore handling.
 TEMP_DISABLED_ROUTE_TAGS = {"remux"}
+PROGRESS: Optional[ProgressReporter] = None
+
+
+def _progress_begin(phase: str, *, total_items: Optional[int] = None, action: str = "planning") -> None:
+    if PROGRESS:
+        PROGRESS.begin_phase(phase, total_items=total_items, action=action)
+
+
+def _progress_total(total_items: int, *, action: str = "processing", message: Optional[str] = None) -> None:
+    if PROGRESS:
+        PROGRESS.set_total(total_items, action=action, message=message)
+
+
+def _progress_advance(
+    *,
+    action: str,
+    source: Optional[str] = None,
+    title: Optional[str] = None,
+    path: Optional[Path] = None,
+    destination: Optional[Path] = None,
+    message: Optional[str] = None,
+    skipped: bool = False,
+    failed: bool = False,
+) -> None:
+    if PROGRESS:
+        PROGRESS.advance(
+            action=action,
+            source=source,
+            title=title,
+            path=str(path) if path is not None else None,
+            destination=str(destination) if destination is not None else None,
+            message=message,
+            skipped_delta=1 if skipped else 0,
+            failed_delta=1 if failed else 0,
+        )
 
 # -------------------- Logging --------------------
 log_path = Path(LOG_FILE)
@@ -508,31 +546,41 @@ def cleanup_old_originals():
     Delete backup-suffixed files older than DELETE_ORIGINAL_FILES_DAYS in MOVE_ORIGINAL_FILES_DEST,
     if DELETE_ORIGINAL_FILES=True. Uses file mtime which we set on archive (touch) so retention is correct.
     """
+    _progress_begin("sweep_archives", action="scanning")
     if not DELETE_ORIGINAL_FILES:
+        _progress_total(0, action="skipped", message="Archive deletion is disabled.")
         return
     if not MOVE_ORIGINAL_FILES_DEST.exists() or not MOVE_ORIGINAL_FILES_DEST.is_dir():
         logger.warning("SWEEP: archive dir %s missing; skipping sweep.", MOVE_ORIGINAL_FILES_DEST)
+        _progress_total(0, action="skipped", message="Archive directory is missing.")
         return
 
     now = time.time()
     cutoff = now - (DELETE_ORIGINAL_FILES_DAYS * 86400) if DELETE_ORIGINAL_FILES_DAYS > 0 else 0
 
-    deleted = 0
-    scanned = 0
+    sweep_files: List[Path] = []
     for root, _, files in os.walk(MOVE_ORIGINAL_FILES_DEST):
         for fname in files:
-            if not fname.endswith(BACKUP_SUFFIX):
-                continue
-            scanned += 1
-            fpath = Path(root) / fname
-            try:
-                mtime = fpath.stat().st_mtime
-                if DELETE_ORIGINAL_FILES_DAYS == 0 or mtime < cutoff:
-                    logger.info("SWEEP: deleting archived original: %s", fpath)
-                    fpath.unlink(missing_ok=True)
-                    deleted += 1
-            except Exception as e:
-                logger.warning("SWEEP: failed to handle %s: %s", fpath, e)
+            if fname.endswith(BACKUP_SUFFIX):
+                sweep_files.append(Path(root) / fname)
+
+    _progress_total(len(sweep_files), action="sweeping", message=f"Sweeping {len(sweep_files)} archived original(s).")
+    deleted = 0
+    scanned = 0
+    for fpath in sweep_files:
+        scanned += 1
+        try:
+            mtime = fpath.stat().st_mtime
+            if DELETE_ORIGINAL_FILES_DAYS == 0 or mtime < cutoff:
+                logger.info("SWEEP: deleting archived original: %s", fpath)
+                fpath.unlink(missing_ok=True)
+                deleted += 1
+                _progress_advance(action="deleted", path=fpath)
+            else:
+                _progress_advance(action="kept", path=fpath, skipped=True)
+        except Exception as e:
+            logger.warning("SWEEP: failed to handle %s: %s", fpath, e)
+            _progress_advance(action="failed", path=fpath, message=str(e), failed=True)
     logger.info("SWEEP: scanned=%d, deleted=%d", scanned, deleted)
 
 # -------------------- Phases --------------------
@@ -544,8 +592,10 @@ def _copy_sonarr_items(
     selection: Optional[Dict[int, Optional[Set[int]]]],
     legacy_mode: bool,
 ) -> None:
+    _progress_begin("copy_sonarr", action="loading_routes")
     if not routes:
         logger.info("No Sonarr routes configured; skipping Sonarr copy.")
+        _progress_total(0, action="skipped", message="No Sonarr routes configured.")
         return
 
     tag_lookup = get_tag_lookup("sonarr")
@@ -566,8 +616,10 @@ def _copy_sonarr_items(
 
     if not series_list:
         logger.info("No Sonarr series found to process.")
+        _progress_total(0, action="skipped", message="No Sonarr series found to process.")
         return
 
+    work_items: List[Dict[str, object]] = []
     for series in series_list:
         try:
             series_id = int(series.get("id"))
@@ -607,22 +659,68 @@ def _copy_sonarr_items(
                 if season_number not in season_filter:
                     continue
 
-            src = translate_sonarr_path(path)
-            if not src.exists():
-                logger.warning("Missing Sonarr source file, skipping: %s", src)
-                continue
+            work_items.append(
+                {
+                    "title": str(series.get("title") or f"Series {series_id}"),
+                    "src": translate_sonarr_path(path),
+                    "destination_root": destination_root,
+                }
+            )
 
-            src_resolved = str(src.resolve())
-            if is_processed(conn, src_resolved):
-                logger.info("SKIP (already processed): %s", src)
-                continue
+    _progress_total(len(work_items), action="copying", message=f"Copying {len(work_items)} Sonarr file(s).")
 
-            try:
-                safe_copy_to_tdarr(src=src, dest_root=destination_root, base_dir=BASE_DIR, dry_run=dry_run)
-                if not dry_run:
-                    mark_processed(conn, src_resolved)
-            except Exception as exc:
-                report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
+    for item in work_items:
+        title = str(item["title"])
+        src = item["src"]
+        destination_root = item["destination_root"]
+        if not isinstance(src, Path) or not isinstance(destination_root, Path):
+            continue
+        try:
+            planned_dest = destination_root.joinpath(src.resolve().relative_to(BASE_DIR.resolve()))
+        except Exception:
+            planned_dest = None
+
+        if not src.exists():
+            logger.warning("Missing Sonarr source file, skipping: %s", src)
+            _progress_advance(
+                action="skipped_missing_source",
+                source="sonarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                skipped=True,
+            )
+            continue
+
+        src_resolved = str(src.resolve())
+        if is_processed(conn, src_resolved):
+            logger.info("SKIP (already processed): %s", src)
+            _progress_advance(
+                action="skipped_already_processed",
+                source="sonarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                skipped=True,
+            )
+            continue
+
+        try:
+            dest = safe_copy_to_tdarr(src=src, dest_root=destination_root, base_dir=BASE_DIR, dry_run=dry_run)
+            if not dry_run:
+                mark_processed(conn, src_resolved)
+            _progress_advance(action="copied", source="sonarr", title=title, path=src, destination=dest)
+        except Exception as exc:
+            _progress_advance(
+                action="failed",
+                source="sonarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                message=str(exc),
+                failed=True,
+            )
+            report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
 
 
 def _extract_radarr_movie_file_path(movie: Dict) -> Optional[str]:
@@ -663,11 +761,14 @@ def _copy_radarr_items(
     dry_run: bool,
     legacy_mode: bool,
 ) -> None:
+    _progress_begin("copy_radarr", action="loading_routes")
     if not routes:
         logger.info("No Radarr routes configured; skipping Radarr copy.")
+        _progress_total(0, action="skipped", message="No Radarr routes configured.")
         return
     if not RADARR_URL or not RADARR_API_KEY:
         logger.warning("Radarr routes exist but RADARR_URL/RADARR_API_KEY are not configured; skipping Radarr copy.")
+        _progress_total(0, action="skipped", message="Radarr is not configured.")
         return
 
     tag_lookup = get_tag_lookup("radarr")
@@ -682,8 +783,10 @@ def _copy_radarr_items(
 
     if not movies:
         logger.info("No Radarr movies found to process.")
+        _progress_total(0, action="skipped", message="No Radarr movies found to process.")
         return
 
+    work_items: List[Dict[str, object]] = []
     for movie in movies:
         item_tag_ids = _normalize_tag_ids(movie.get("tags"))
         route = _find_route_for_item(item_tag_ids, routes, tag_lookup)
@@ -696,15 +799,6 @@ def _copy_radarr_items(
             continue
 
         src = translate_radarr_path(path)
-        if not src.exists():
-            logger.warning("Missing Radarr source file, skipping: %s", src)
-            continue
-
-        src_resolved = str(src.resolve())
-        if is_processed(conn, src_resolved):
-            logger.info("SKIP (already processed): %s", src)
-            continue
-
         if legacy_mode:
             destination_root = TDARR_INPUT_DIR.joinpath(SOURCE_PREFIXES["radarr"])
         else:
@@ -717,8 +811,54 @@ def _copy_radarr_items(
             route.get("tag", ""),
             destination_root,
         )
+        work_items.append(
+            {
+                "title": str(movie.get("title") or "Radarr movie"),
+                "src": src,
+                "destination_root": destination_root,
+            }
+        )
+
+    _progress_total(len(work_items), action="copying", message=f"Copying {len(work_items)} Radarr file(s).")
+
+    for item in work_items:
+        title = str(item["title"])
+        src = item["src"]
+        destination_root = item["destination_root"]
+        if not isinstance(src, Path) or not isinstance(destination_root, Path):
+            continue
         try:
-            safe_copy_to_tdarr(
+            planned_dest = destination_root.joinpath(src.resolve().relative_to(RADARR_LOCAL_MOUNT_BASE_PATH.resolve()))
+        except Exception:
+            planned_dest = None
+
+        if not src.exists():
+            logger.warning("Missing Radarr source file, skipping: %s", src)
+            _progress_advance(
+                action="skipped_missing_source",
+                source="radarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                skipped=True,
+            )
+            continue
+
+        src_resolved = str(src.resolve())
+        if is_processed(conn, src_resolved):
+            logger.info("SKIP (already processed): %s", src)
+            _progress_advance(
+                action="skipped_already_processed",
+                source="radarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                skipped=True,
+            )
+            continue
+
+        try:
+            dest = safe_copy_to_tdarr(
                 src=src,
                 dest_root=destination_root,
                 base_dir=RADARR_LOCAL_MOUNT_BASE_PATH,
@@ -726,14 +866,26 @@ def _copy_radarr_items(
             )
             if not dry_run:
                 mark_processed(conn, src_resolved)
+            _progress_advance(action="copied", source="radarr", title=title, path=src, destination=dest)
         except Exception as exc:
+            _progress_advance(
+                action="failed",
+                source="radarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                message=str(exc),
+                failed=True,
+            )
             report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
 
 
 def process_media_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional[Set[int]]]] = None):
+    _progress_begin("copy_sonarr", action="loading_routes")
     _, routes, legacy_mode = load_effective_routes()
     if not routes:
         logger.info("No route rules resolved. Nothing to copy into Tdarr input.")
+        _progress_total(0, action="skipped", message="No route rules resolved.")
         return
 
     grouped_routes = _group_routes_by_source(routes)
@@ -765,8 +917,10 @@ def _resolve_restore_destination(rel_path: Path, routes: List[Dict[str, str]]) -
 
 
 def move_tdarr_output_back(dry_run=False):
+    _progress_begin("restore_outputs", action="scanning")
     if not TDARR_OUTPUT_DIR.exists():
         logger.info("Tdarr output dir does not exist: %s", TDARR_OUTPUT_DIR)
+        _progress_total(0, action="skipped", message="Tdarr output directory does not exist.")
         return
 
     runtime_settings, routes, _ = load_effective_routes()
@@ -777,25 +931,29 @@ def move_tdarr_output_back(dry_run=False):
             ", ".join(sorted(disabled_input_subdirs)),
         )
     logger.info("RESTORE: scanning %s", TDARR_OUTPUT_DIR)
-    for out_path in TDARR_OUTPUT_DIR.rglob("*"):
-        if out_path.is_dir():
-            continue
+    output_files = [path for path in TDARR_OUTPUT_DIR.rglob("*") if not path.is_dir()]
+    _progress_total(len(output_files), action="restoring", message=f"Restoring {len(output_files)} output file(s).")
+    for out_path in output_files:
         try:
             rel = out_path.relative_to(TDARR_OUTPUT_DIR)
         except Exception:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
+            _progress_advance(action="skipped_outside_output", path=out_path, skipped=True)
             continue
         if rel.parts and rel.parts[0] in disabled_input_subdirs:
             logger.info("RESTORE: skip output under disabled-tag subdir %s: %s", rel.parts[0], out_path)
+            _progress_advance(action="skipped_disabled_route", path=out_path, skipped=True)
             continue
 
         library_base, relative_to_library = _resolve_restore_destination(rel, routes)
         if str(relative_to_library) in {"", "."}:
             logger.warning("RESTORE: skipped malformed output path %s", out_path)
+            _progress_advance(action="skipped_malformed_path", path=out_path, skipped=True)
             continue
         dest = library_base.joinpath(relative_to_library)
         if dry_run:
             logger.info("[RESTORE DRY] %s -> %s", out_path, dest)
+            _progress_advance(action="dry_run_restore", path=out_path, destination=dest)
             continue
 
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -807,7 +965,9 @@ def move_tdarr_output_back(dry_run=False):
         logger.info("RESTORE: move transcoded %s -> %s", out_path, dest)
         try:
             shutil.move(str(out_path), str(dest))
+            _progress_advance(action="restored", path=out_path, destination=dest)
         except Exception as e:
+            _progress_advance(action="failed", path=out_path, destination=dest, message=str(e), failed=True)
             report_error_and_exit(f"Failed to move restored file {out_path} -> {dest}", e)
 
 # -------------------- Interactive Picker --------------------
@@ -1002,7 +1162,11 @@ def parse_args():
     return p.parse_args()
 
 def main():
+    global PROGRESS
     args = parse_args()
+    run_id = os.environ.get("TDARR_SYNC_RUN_ID") or uuid.uuid4().hex
+    PROGRESS = ProgressReporter(SYNC_PROGRESS_FILE, run_id, dry_run=args.dry_run)
+    PROGRESS.begin_phase("starting", action="starting")
     # CLI flag enables interactive; otherwise fall back to .env default
     use_interactive = args.interactive or ENV_INTERACTIVE
     if use_interactive and not sys.stdin.isatty():
@@ -1023,9 +1187,15 @@ def main():
             if not args.dry_run:
                 cleanup_old_originals()
     except SystemExit:
+        if PROGRESS:
+            PROGRESS.finish("failed", error="Sync exited before completion.")
         raise
     except Exception as e:
+        if PROGRESS:
+            PROGRESS.finish("failed", error=str(e))
         report_error_and_exit("Unhandled error in main()", e)
+    if PROGRESS:
+        PROGRESS.finish("succeeded", message="Finished tdarr_sync run.")
     logger.info("Finished tdarr_sync run.")
 
 if __name__ == "__main__":

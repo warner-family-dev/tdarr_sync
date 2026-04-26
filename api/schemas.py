@@ -4,6 +4,57 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class SyncProgress(BaseModel):
+    run_id: str
+    state: str
+    phase: str
+    action: str = ""
+    dry_run: bool = False
+    source: Optional[str] = None
+    title: Optional[str] = None
+    path: Optional[str] = None
+    destination: Optional[str] = None
+    message: Optional[str] = None
+    completed_items: int = 0
+    total_items: Optional[int] = None
+    skipped_items: int = 0
+    failed_items: int = 0
+    percent: Optional[float] = None
+    eta_seconds: Optional[int] = None
+    started_at: Optional[int] = None
+    started_at_iso: Optional[str] = None
+    phase_started_at: Optional[int] = None
+    phase_started_at_iso: Optional[str] = None
+    updated_at: Optional[int] = None
+    updated_at_iso: Optional[str] = None
+    finished_at: Optional[int] = None
+    finished_at_iso: Optional[str] = None
+    elapsed_seconds: Optional[int] = None
+    error: Optional[str] = None
+
+
+class TdarrWorkerStatus(BaseModel):
+    id: str
+    name: str = ""
+    node: str = ""
+    status: str = ""
+    file: Optional[str] = None
+    title: Optional[str] = None
+    progress: Optional[float] = None
+    eta_seconds: Optional[int] = None
+
+
+class TdarrStatus(BaseModel):
+    configured: bool = False
+    reachable: bool = False
+    server_url: str = ""
+    error: Optional[str] = None
+    queue_count: Optional[int] = None
+    error_count: Optional[int] = None
+    active_worker_count: int = 0
+    workers: List[TdarrWorkerStatus] = Field(default_factory=list)
+
+
 class ProcessedFile(BaseModel):
     file_path: str = Field(...)
     processed_at: Optional[int] = Field(default=None, description="Epoch seconds")
@@ -29,6 +80,8 @@ class SyncStatus(BaseModel):
     last_finished_at_iso: Optional[str] = None
     last_exit_code: Optional[int] = None
     last_error: Optional[str] = None
+    progress: Optional[SyncProgress] = None
+    tdarr: Optional[TdarrStatus] = None
 
 
 class SyncTriggerResponse(BaseModel):
