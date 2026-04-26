@@ -124,7 +124,6 @@ class TdarrClient:
         return response.json()
 
     def fetch_status(self) -> Dict[str, Any]:
-        errors: List[str] = []
         status_payload: Any = {}
         nodes_payload: Any = {}
         stats_payload: Any = {}
@@ -137,23 +136,23 @@ class TdarrClient:
         try:
             nodes_payload = self._request_json("GET", "/api/v2/get-nodes")
         except Exception as exc:
-            errors.append(f"nodes: {exc}")
+            nodes_payload = {"_tdarr_sync_warning": f"nodes: {exc}"}
 
         try:
             stats_payload = self._request_json(
                 "POST",
                 "/api/v2/cruddb",
-                json={"data": {"collection": "StatisticsJSONDB", "mode": "get"}},
+                json={"data": {"collection": "StatisticsJSONDB", "mode": "getAll"}},
             )
-        except Exception as exc:
-            errors.append(f"stats: {exc}")
+        except Exception:
+            stats_payload = {}
 
         workers = _extract_workers(status_payload, nodes_payload)
         return {
             "configured": True,
             "reachable": True,
             "server_url": self.server_url,
-            "error": "; ".join(errors) if errors else None,
+            "error": nodes_payload.get("_tdarr_sync_warning") if isinstance(nodes_payload, dict) else None,
             "queue_count": _first_number(
                 [status_payload, stats_payload],
                 {"queue", "queued", "queuecount", "queuedcount", "transcodequeue", "transcodequeuecount"},

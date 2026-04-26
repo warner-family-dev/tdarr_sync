@@ -69,6 +69,7 @@ except Exception:
     sys.modules["fastapi.middleware.cors"] = cors_stub
 
 from api.main import sync_status  # noqa: E402
+from api.tdarr_client import TdarrClient  # noqa: E402
 
 
 class SyncStatusApiTests(unittest.TestCase):
@@ -140,6 +141,30 @@ class SyncStatusApiTests(unittest.TestCase):
             self.assertEqual(payload.progress["run_id"], "abc")
             self.assertEqual(payload.progress["percent"], 50.0)
             self.assertFalse(payload.tdarr["reachable"])
+
+
+class TdarrClientTests(unittest.TestCase):
+    def test_stats_request_uses_get_all_and_stats_failure_is_nonfatal(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+        calls = []
+
+        def fake_request(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            if path == "/api/v2/status":
+                return {"status": "good"}
+            if path == "/api/v2/get-nodes":
+                return {"nodes": []}
+            if path == "/api/v2/cruddb":
+                raise RuntimeError("bad request")
+            raise AssertionError(path)
+
+        with patch.object(client, "_request_json", side_effect=fake_request):
+            payload = client.fetch_status()
+
+        crud_call = [call for call in calls if call[1] == "/api/v2/cruddb"][0]
+        self.assertEqual(crud_call[2]["json"]["data"]["mode"], "getAll")
+        self.assertTrue(payload["reachable"])
+        self.assertIsNone(payload["error"])
 
 
 if __name__ == "__main__":
