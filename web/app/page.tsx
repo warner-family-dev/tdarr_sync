@@ -269,7 +269,7 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
-          {status?.progress && (
+          {status?.running && status.progress && (
             <div className="sync-progress-panel">
               <div className="sync-progress-header">
                 <strong>{phaseLabel(status.progress.phase)}</strong>
