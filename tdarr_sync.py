@@ -3,17 +3,15 @@
 tdarr_sync.py
 
 Workflow:
-- Copy phase: copy Sonarr-tagged files from BASE_DIR into TDARR_INPUT_DIR (preserving relative paths).
+- Copy phase: copy Sonarr/Radarr tagged files into TDARR_INPUT_DIR (preserving relative paths).
   * NO renaming/moving of originals during copy.
-- Restore phase: move transcoded files from TDARR_OUTPUT_DIR back into BASE_DIR.
+- Restore phase: move transcoded files from TDARR_OUTPUT_DIR back into library paths.
   * If destination exists, rename it with BACKUP_SUFFIX and (optionally) move to MOVE_ORIGINAL_FILES_DEST.
   * When moved to archive, 'touch' its mtime to now so retention uses archive time (not content age).
 - After restore, optionally sweep old archived originals based on DELETE_ORIGINAL_FILES settings.
 
 New:
 - Interactive picker (--interactive or INTERACTIVE=True in .env) with per-series processed status.
-
-No existing .env keys changed.
 """
 
 import argparse
@@ -31,6 +29,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
+from runtime_settings import load_runtime_settings, settings_path_from_env
 
 # -------------------- ENV --------------------
 load_dotenv()
@@ -39,6 +38,9 @@ try:
     SONARR_URL = os.environ["SONARR_URL"]
     SONARR_API_KEY = os.environ["SONARR_API_KEY"]
     SONARR_TAG_NAME = os.environ.get("SONARR_TAG_NAME", "")
+    RADARR_URL = os.environ.get("RADARR_URL", "")
+    RADARR_API_KEY = os.environ.get("RADARR_API_KEY", "")
+    RADARR_TAG_NAME = os.environ.get("RADARR_TAG_NAME", "")
 
     BASE_DIR = Path(os.environ["BASE_DIR"]).resolve()
     TDARR_INPUT_DIR = Path(os.environ["TDARR_INPUT_DIR"]).resolve()
@@ -46,6 +48,8 @@ try:
 
     SONARR_BASE_PATH = Path(os.environ.get("SONARR_BASE_PATH", "/tv"))
     LOCAL_MOUNT_BASE_PATH = Path(os.environ.get("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos"))
+    RADARR_BASE_PATH = Path(os.environ.get("RADARR_BASE_PATH", "/movies"))
+    RADARR_LOCAL_MOUNT_BASE_PATH = Path(os.environ.get("RADARR_LOCAL_MOUNT_BASE_PATH", str(BASE_DIR)))
 
     RENAME_ORIGINAL_FILES = os.environ.get("RENAME_ORIGINAL_FILES", "True").lower() in ("true", "1", "yes")
     BACKUP_SUFFIX = os.environ.get("BACKUP_SUFFIX", ".orig")
@@ -66,9 +70,17 @@ try:
     LOG_BACKUP_COUNT = int(os.environ.get("LOG_BACKUP_COUNT", 3))
 
     STATE_DB_FILE = Path(os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db")).resolve()
+    RUNTIME_SETTINGS_FILE = settings_path_from_env().resolve()
 except KeyError as e:
     print(f"Missing required environment variable: {e}")
     raise SystemExit(1)
+
+SOURCE_PREFIXES = {
+    "sonarr": "__sonarr_input__",
+    "radarr": "__radarr_input__",
+}
+# Temporary route-tag block list. Any matching routes are ignored for copy + restore handling.
+TEMP_DISABLED_ROUTE_TAGS = {"remux"}
 
 # -------------------- Logging --------------------
 log_path = Path(LOG_FILE)
@@ -111,35 +123,45 @@ def report_error_and_exit(msg: str, exc: Exception = None):
     telegram_send_message(f"❗ *tdarr_sync error:*\n{msg}\n{exc if exc else ''}")
     raise SystemExit(1)
 
-def sonarr_get(endpoint: str, params: Dict = None) -> requests.Response:
-    params = params or {}
-    params["apikey"] = SONARR_API_KEY
-    url = SONARR_URL.rstrip("/") + "/api/v3" + endpoint
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
-    return r
+def _arr_get(base_url: str, api_key: str, endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+    query = dict(params or {})
+    query["apikey"] = api_key
+    url = base_url.rstrip("/") + "/api/v3" + endpoint
+    response = requests.get(url, params=query, timeout=20)
+    response.raise_for_status()
+    return response
 
-def find_tag_id(tag_name: str) -> Optional[int]:
-    if not tag_name:
-        logger.info("No SONARR_TAG_NAME specified; will process all series.")
-        return None
-    try:
-        tags = sonarr_get("/tag").json()
-    except Exception as e:
-        report_error_and_exit("Failed to get tags from Sonarr", e)
-    for t in tags:
-        if str(t.get("label", "")).lower() == tag_name.lower():
-            return int(t.get("id"))
-    report_error_and_exit(f"Tag '{tag_name}' not found. Existing tags: {[t.get('label') for t in tags]}")
 
-def get_series_with_tag(tag_id: Optional[int]) -> List[Dict]:
+def sonarr_get(endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+    return _arr_get(SONARR_URL, SONARR_API_KEY, endpoint, params)
+
+
+def radarr_get(endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+    if not RADARR_URL or not RADARR_API_KEY:
+        raise RuntimeError("Radarr is not configured.")
+    return _arr_get(RADARR_URL, RADARR_API_KEY, endpoint, params)
+
+
+def _translate_path(arr_path: str, arr_base_path: Path, local_mount_path: Path) -> Path:
+    """Map an ARR path rooted at arr_base_path to local_mount_path."""
+    candidate = Path(arr_path)
     try:
-        series_list = sonarr_get("/series").json()
-    except Exception as e:
-        report_error_and_exit("Failed to get series from Sonarr", e)
-    if tag_id is None:
-        return series_list
-    return [s for s in series_list if tag_id in (s.get("tags") or [])]
+        if candidate.is_absolute() and candidate.parts[: len(arr_base_path.parts)] == arr_base_path.parts:
+            relative = candidate.relative_to(arr_base_path)
+            return local_mount_path.joinpath(relative)
+        return candidate
+    except Exception as exc:
+        logger.warning("Path translation failed for '%s': %s", arr_path, exc)
+        return candidate
+
+
+def translate_sonarr_path(sonarr_path: str) -> Path:
+    return _translate_path(sonarr_path, SONARR_BASE_PATH, LOCAL_MOUNT_BASE_PATH)
+
+
+def translate_radarr_path(radarr_path: str) -> Path:
+    return _translate_path(radarr_path, RADARR_BASE_PATH, RADARR_LOCAL_MOUNT_BASE_PATH)
+
 
 def get_episode_files_for_series(series_id: int) -> List[Dict]:
     try:
@@ -147,17 +169,105 @@ def get_episode_files_for_series(series_id: int) -> List[Dict]:
     except Exception as e:
         report_error_and_exit(f"Failed fetching episode files for series {series_id}", e)
 
-def translate_path(sonarr_path: str) -> Path:
-    """Map Sonarr path rooted at SONARR_BASE_PATH to local path under LOCAL_MOUNT_BASE_PATH."""
-    p = Path(sonarr_path)
+
+def get_tag_lookup(source: str) -> Dict[str, int]:
+    getter = sonarr_get if source == "sonarr" else radarr_get
+    label_to_id: Dict[str, int] = {}
     try:
-        if p.is_absolute() and p.parts[:len(SONARR_BASE_PATH.parts)] == SONARR_BASE_PATH.parts:
-            relative = p.relative_to(SONARR_BASE_PATH)
-            return LOCAL_MOUNT_BASE_PATH.joinpath(relative)
-        return p
-    except Exception as e:
-        logger.warning("Path translation failed for '%s': %s", sonarr_path, e)
-        return p
+        tags = getter("/tag").json()
+    except Exception as exc:
+        report_error_and_exit(f"Failed to load tags from {source.capitalize()}", exc)
+    for tag in tags:
+        label = str(tag.get("label", "")).strip()
+        if not label:
+            continue
+        try:
+            label_to_id[label.lower()] = int(tag.get("id"))
+        except (TypeError, ValueError):
+            continue
+    return label_to_id
+
+
+def _find_route_for_item(
+    item_tag_ids: List[int], routes: List[Dict[str, str]], tag_lookup: Dict[str, int]
+) -> Optional[Dict[str, str]]:
+    for route in routes:
+        route_tag_id = tag_lookup.get(route["tag"].lower())
+        if route_tag_id is None:
+            continue
+        if route_tag_id in item_tag_ids:
+            return route
+    return None
+
+
+def _normalize_tag_ids(raw_tags: object) -> List[int]:
+    normalized: List[int] = []
+    if not isinstance(raw_tags, list):
+        return normalized
+    for value in raw_tags:
+        try:
+            normalized.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return normalized
+
+
+def _route_tag(route: Dict[str, object]) -> str:
+    return str(route.get("tag", "")).strip().lower()
+
+
+def _partition_routes_by_disabled_tag(
+    routes: List[Dict[str, str]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    enabled: List[Dict[str, str]] = []
+    disabled: List[Dict[str, str]] = []
+    for route in routes:
+        if _route_tag(route) in TEMP_DISABLED_ROUTE_TAGS:
+            disabled.append(route)
+        else:
+            enabled.append(route)
+    return enabled, disabled
+
+
+def _log_disabled_routes(disabled_routes: List[Dict[str, str]], *, scope: str) -> None:
+    if not disabled_routes:
+        return
+    tags = sorted({_route_tag(route) for route in disabled_routes if _route_tag(route)})
+    logger.warning(
+        "Temporarily disabled %d %s route(s) for blocked tag(s): %s",
+        len(disabled_routes),
+        scope,
+        ", ".join(tags),
+    )
+
+
+def _disabled_route_input_subdirs(runtime_settings: Dict[str, object]) -> Set[str]:
+    disabled_subdirs: Set[str] = set()
+    configured_routes = runtime_settings.get("routes", [])
+    if not isinstance(configured_routes, list):
+        return disabled_subdirs
+
+    for route in configured_routes:
+        if not isinstance(route, dict):
+            continue
+        if _route_tag(route) not in TEMP_DISABLED_ROUTE_TAGS:
+            continue
+        input_subdir = str(route.get("input_subdir", "")).strip()
+        if input_subdir:
+            disabled_subdirs.add(input_subdir)
+    return disabled_subdirs
+
+
+def _route_input_root(route: Dict[str, str], source: str) -> Path:
+    parts = [TDARR_INPUT_DIR]
+    input_subdir = route.get("input_subdir", "").strip()
+    if input_subdir:
+        parts.append(Path(input_subdir))
+    parts.append(Path(SOURCE_PREFIXES[source]))
+    dest = Path(parts[0])
+    for segment in parts[1:]:
+        dest = dest.joinpath(segment)
+    return dest
 
 def build_relative_path(full_path: Path, base_dir: Path) -> Path:
     try:
@@ -259,6 +369,69 @@ def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]
     return structured
 
 
+def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bool]:
+    runtime_settings = load_runtime_settings(RUNTIME_SETTINGS_FILE)
+    configured_routes = runtime_settings.get("routes", [])
+    if isinstance(configured_routes, list) and configured_routes:
+        routes: List[Dict[str, str]] = []
+        for route in configured_routes:
+            if isinstance(route, dict):
+                routes.append(route)
+        enabled_routes, disabled_routes = _partition_routes_by_disabled_tag(routes)
+        _log_disabled_routes(disabled_routes, scope="UI")
+        logger.info(
+            "Loaded %d active route rule(s) from %s%s",
+            len(enabled_routes),
+            RUNTIME_SETTINGS_FILE,
+            f" ({len(disabled_routes)} temporarily disabled)" if disabled_routes else "",
+        )
+        return runtime_settings, enabled_routes, False
+
+    # Legacy fallback keeps existing behaviour if UI rules have not been configured yet.
+    fallback_routes: List[Dict[str, str]] = []
+    if SONARR_TAG_NAME:
+        fallback_routes.append(
+            {
+                "source": "sonarr",
+                "tag": SONARR_TAG_NAME,
+                "flow_name": "legacy-sonarr",
+                "input_subdir": "",
+            }
+        )
+    if RADARR_URL and RADARR_API_KEY and RADARR_TAG_NAME:
+        fallback_routes.append(
+            {
+                "source": "radarr",
+                "tag": RADARR_TAG_NAME,
+                "flow_name": "legacy-radarr",
+                "input_subdir": "",
+            }
+        )
+    enabled_fallback, disabled_fallback = _partition_routes_by_disabled_tag(fallback_routes)
+    _log_disabled_routes(disabled_fallback, scope="legacy")
+    if enabled_fallback:
+        logger.info(
+            "No UI routes configured in %s; using %d legacy env-based route(s).",
+            RUNTIME_SETTINGS_FILE,
+            len(enabled_fallback),
+        )
+    elif disabled_fallback:
+        logger.warning("No active legacy routes after temporary tag suppression.")
+    else:
+        logger.warning("No routes configured in runtime settings or environment.")
+    return runtime_settings, enabled_fallback, True
+
+
+def _group_routes_by_source(routes: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
+    grouped: Dict[str, List[Dict[str, str]]] = {"sonarr": [], "radarr": []}
+    for route in routes:
+        source = str(route.get("source", "")).lower()
+        if source not in grouped:
+            continue
+        grouped[source].append(route)
+    return grouped
+
+
 def episode_season_number(episode: dict) -> int:
     raw = episode.get("seasonNumber")
     if raw is None:
@@ -287,10 +460,10 @@ def _compute_backup_target(original: Path) -> Path:
         counter += 1
     return candidate
 
-def archive_original_before_restore(file_path: Path) -> Optional[Path]:
+def archive_original_before_restore(file_path: Path, library_base: Path) -> Optional[Path]:
     """
     If RENAME_ORIGINAL_FILES and destination exists, rename it with BACKUP_SUFFIX.
-    If MOVE_ORIGINAL_FILES, move that backup into MOVE_ORIGINAL_FILES_DEST preserving path under BASE_DIR.
+    If MOVE_ORIGINAL_FILES, move that backup into MOVE_ORIGINAL_FILES_DEST preserving path under library_base.
     When moved to archive, 'touch' the file to now so retention is based on archive time.
     Returns the final archived path (or None if nothing archived).
     """
@@ -310,7 +483,7 @@ def archive_original_before_restore(file_path: Path) -> Optional[Path]:
 
     if MOVE_ORIGINAL_FILES:
         try:
-            rel = backup_on_site.resolve().relative_to(BASE_DIR.resolve())
+            rel = backup_on_site.resolve().relative_to(library_base.resolve())
             dest = MOVE_ORIGINAL_FILES_DEST.joinpath(rel)
             dest.parent.mkdir(parents=True, exist_ok=True)
             logger.info("ARCHIVE: move to archive %s -> %s", backup_on_site, dest)
@@ -363,68 +536,246 @@ def cleanup_old_originals():
     logger.info("SWEEP: scanned=%d, deleted=%d", scanned, deleted)
 
 # -------------------- Phases --------------------
-def process_sonarr_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional[Set[int]]]] = None):
-    conn = init_db()
-    tag_id = find_tag_id(SONARR_TAG_NAME)
-    series_list = get_series_with_tag(tag_id)
-    if not series_list:
-        logger.info("No series found to process.")
-        conn.close()
+def _copy_sonarr_items(
+    conn: sqlite3.Connection,
+    routes: List[Dict[str, str]],
+    *,
+    dry_run: bool,
+    selection: Optional[Dict[int, Optional[Set[int]]]],
+    legacy_mode: bool,
+) -> None:
+    if not routes:
+        logger.info("No Sonarr routes configured; skipping Sonarr copy.")
         return
 
-    series_selection = selection or None
-    if series_selection is not None:
-        selected_ids = set(series_selection.keys())
-        before = len(series_list)
-        series_list = [s for s in series_list if s.get("id") in selected_ids]
-        logger.info("Structured selection: %d -> %d series", before, len(series_list))
-        if not series_list:
-            logger.info("No series selected; nothing to copy.")
-            conn.close()
-            return
+    tag_lookup = get_tag_lookup("sonarr")
+    unknown_tags = sorted({route["tag"] for route in routes if route["tag"].lower() not in tag_lookup})
+    if unknown_tags:
+        logger.warning("Sonarr routes contain unknown tag(s): %s", ", ".join(unknown_tags))
 
-    for s in series_list:
+    try:
+        series_list = sonarr_get("/series").json()
+    except Exception as exc:
+        report_error_and_exit("Failed to get series from Sonarr", exc)
+
+    if selection is not None:
+        selected_ids = set(selection.keys())
+        before = len(series_list)
+        series_list = [series for series in series_list if series.get("id") in selected_ids]
+        logger.info("Structured selection: %d -> %d Sonarr series", before, len(series_list))
+
+    if not series_list:
+        logger.info("No Sonarr series found to process.")
+        return
+
+    for series in series_list:
         try:
-            series_id = int(s.get("id"))
+            series_id = int(series.get("id"))
         except (TypeError, ValueError):
-            logger.warning("Skipping series with invalid id: %s", s)
+            logger.warning("Skipping Sonarr series with invalid id: %s", series)
             continue
-        title = s.get("title")
+
         season_filter = None
-        if series_selection is not None and series_id in series_selection:
-            season_filter = series_selection.get(series_id)
-        logger.info("SERIES: %s (id=%s)", title, series_id)
-        for ef in get_episode_files_for_series(series_id):
-            path = ef.get("path") or ef.get("relativePath")
+        if selection is not None and series_id in selection:
+            season_filter = selection.get(series_id)
+
+        item_tag_ids = _normalize_tag_ids(series.get("tags"))
+        route = _find_route_for_item(item_tag_ids, routes, tag_lookup)
+        if route is None:
+            continue
+
+        if legacy_mode:
+            destination_root = TDARR_INPUT_DIR
+        else:
+            destination_root = _route_input_root(route, "sonarr")
+
+        logger.info(
+            "SONARR: %s (id=%s) -> flow='%s' tag='%s' dest='%s'",
+            series.get("title"),
+            series_id,
+            route.get("flow_name", ""),
+            route.get("tag", ""),
+            destination_root,
+        )
+        for episode_file in get_episode_files_for_series(series_id):
+            path = episode_file.get("path") or episode_file.get("relativePath")
             if not path:
-                logger.warning("Skipping episode file with no path: %s", ef)
+                logger.warning("Skipping Sonarr episode file with no path: %s", episode_file)
                 continue
             if season_filter is not None:
-                season_number = episode_season_number(ef)
+                season_number = episode_season_number(episode_file)
                 if season_number not in season_filter:
                     continue
-            src = translate_path(path)
+
+            src = translate_sonarr_path(path)
             if not src.exists():
-                logger.warning("Missing source file, skipping: %s", src)
+                logger.warning("Missing Sonarr source file, skipping: %s", src)
                 continue
+
             src_resolved = str(src.resolve())
             if is_processed(conn, src_resolved):
                 logger.info("SKIP (already processed): %s", src)
                 continue
 
             try:
-                safe_copy_to_tdarr(src=src, dest_root=TDARR_INPUT_DIR, base_dir=BASE_DIR, dry_run=dry_run)
+                safe_copy_to_tdarr(src=src, dest_root=destination_root, base_dir=BASE_DIR, dry_run=dry_run)
                 if not dry_run:
                     mark_processed(conn, src_resolved)
-            except Exception as e:
-                report_error_and_exit(f"Copy failed {src} -> {TDARR_INPUT_DIR}", e)
-    conn.close()
+            except Exception as exc:
+                report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
+
+
+def _extract_radarr_movie_file_path(movie: Dict) -> Optional[str]:
+    movie_file = movie.get("movieFile")
+    if isinstance(movie_file, dict):
+        path = movie_file.get("path")
+        if path:
+            return str(path)
+
+    movie_id_raw = movie.get("id")
+    if movie_id_raw is None:
+        return None
+    try:
+        movie_id = int(movie_id_raw)
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        movie_files = radarr_get("/moviefile", params={"movieId": movie_id}).json()
+    except Exception as exc:
+        logger.warning("Failed fetching Radarr movie file for movie id=%s: %s", movie_id, exc)
+        return None
+
+    if isinstance(movie_files, list):
+        for item in movie_files:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            if path:
+                return str(path)
+    return None
+
+
+def _copy_radarr_items(
+    conn: sqlite3.Connection,
+    routes: List[Dict[str, str]],
+    *,
+    dry_run: bool,
+    legacy_mode: bool,
+) -> None:
+    if not routes:
+        logger.info("No Radarr routes configured; skipping Radarr copy.")
+        return
+    if not RADARR_URL or not RADARR_API_KEY:
+        logger.warning("Radarr routes exist but RADARR_URL/RADARR_API_KEY are not configured; skipping Radarr copy.")
+        return
+
+    tag_lookup = get_tag_lookup("radarr")
+    unknown_tags = sorted({route["tag"] for route in routes if route["tag"].lower() not in tag_lookup})
+    if unknown_tags:
+        logger.warning("Radarr routes contain unknown tag(s): %s", ", ".join(unknown_tags))
+
+    try:
+        movies = radarr_get("/movie").json()
+    except Exception as exc:
+        report_error_and_exit("Failed to get movies from Radarr", exc)
+
+    if not movies:
+        logger.info("No Radarr movies found to process.")
+        return
+
+    for movie in movies:
+        item_tag_ids = _normalize_tag_ids(movie.get("tags"))
+        route = _find_route_for_item(item_tag_ids, routes, tag_lookup)
+        if route is None:
+            continue
+
+        path = _extract_radarr_movie_file_path(movie)
+        if not path:
+            logger.warning("Skipping Radarr movie with no file path: %s", movie.get("title"))
+            continue
+
+        src = translate_radarr_path(path)
+        if not src.exists():
+            logger.warning("Missing Radarr source file, skipping: %s", src)
+            continue
+
+        src_resolved = str(src.resolve())
+        if is_processed(conn, src_resolved):
+            logger.info("SKIP (already processed): %s", src)
+            continue
+
+        if legacy_mode:
+            destination_root = TDARR_INPUT_DIR.joinpath(SOURCE_PREFIXES["radarr"])
+        else:
+            destination_root = _route_input_root(route, "radarr")
+
+        logger.info(
+            "RADARR: %s -> flow='%s' tag='%s' dest='%s'",
+            movie.get("title"),
+            route.get("flow_name", ""),
+            route.get("tag", ""),
+            destination_root,
+        )
+        try:
+            safe_copy_to_tdarr(
+                src=src,
+                dest_root=destination_root,
+                base_dir=RADARR_LOCAL_MOUNT_BASE_PATH,
+                dry_run=dry_run,
+            )
+            if not dry_run:
+                mark_processed(conn, src_resolved)
+        except Exception as exc:
+            report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
+
+
+def process_media_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional[Set[int]]]] = None):
+    _, routes, legacy_mode = load_effective_routes()
+    if not routes:
+        logger.info("No route rules resolved. Nothing to copy into Tdarr input.")
+        return
+
+    grouped_routes = _group_routes_by_source(routes)
+    conn = init_db()
+    try:
+        _copy_sonarr_items(conn, grouped_routes["sonarr"], dry_run=dry_run, selection=selection, legacy_mode=legacy_mode)
+        _copy_radarr_items(conn, grouped_routes["radarr"], dry_run=dry_run, legacy_mode=legacy_mode)
+    finally:
+        conn.close()
+
+
+def _resolve_restore_destination(rel_path: Path, routes: List[Dict[str, str]]) -> Tuple[Path, Path]:
+    prefix_to_source = {prefix: source for source, prefix in SOURCE_PREFIXES.items()}
+    flow_subdirs = {str(route.get("input_subdir", "")).strip() for route in routes if route.get("input_subdir")}
+    parts = rel_path.parts
+
+    if len(parts) >= 2 and parts[0] in flow_subdirs and parts[1] in prefix_to_source:
+        source = prefix_to_source[parts[1]]
+        relative_to_library = Path(*parts[2:]) if len(parts) > 2 else Path()
+    elif len(parts) >= 1 and parts[0] in prefix_to_source:
+        source = prefix_to_source[parts[0]]
+        relative_to_library = Path(*parts[1:]) if len(parts) > 1 else Path()
+    else:
+        source = "sonarr"
+        relative_to_library = rel_path
+
+    library_base = BASE_DIR if source == "sonarr" else RADARR_LOCAL_MOUNT_BASE_PATH
+    return library_base, relative_to_library
+
 
 def move_tdarr_output_back(dry_run=False):
     if not TDARR_OUTPUT_DIR.exists():
         logger.info("Tdarr output dir does not exist: %s", TDARR_OUTPUT_DIR)
         return
 
+    runtime_settings, routes, _ = load_effective_routes()
+    disabled_input_subdirs = _disabled_route_input_subdirs(runtime_settings)
+    if disabled_input_subdirs:
+        logger.info(
+            "RESTORE: skipping disabled-tag subdir(s): %s",
+            ", ".join(sorted(disabled_input_subdirs)),
+        )
     logger.info("RESTORE: scanning %s", TDARR_OUTPUT_DIR)
     for out_path in TDARR_OUTPUT_DIR.rglob("*"):
         if out_path.is_dir():
@@ -434,8 +785,15 @@ def move_tdarr_output_back(dry_run=False):
         except Exception:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
             continue
+        if rel.parts and rel.parts[0] in disabled_input_subdirs:
+            logger.info("RESTORE: skip output under disabled-tag subdir %s: %s", rel.parts[0], out_path)
+            continue
 
-        dest = BASE_DIR.joinpath(rel)
+        library_base, relative_to_library = _resolve_restore_destination(rel, routes)
+        if str(relative_to_library) in {"", "."}:
+            logger.warning("RESTORE: skipped malformed output path %s", out_path)
+            continue
+        dest = library_base.joinpath(relative_to_library)
         if dry_run:
             logger.info("[RESTORE DRY] %s -> %s", out_path, dest)
             continue
@@ -444,7 +802,7 @@ def move_tdarr_output_back(dry_run=False):
 
         # If destination exists, archive original NOW (rename + optional move + touch)
         if dest.exists():
-            archive_original_before_restore(dest)
+            archive_original_before_restore(dest, library_base)
 
         logger.info("RESTORE: move transcoded %s -> %s", out_path, dest)
         try:
@@ -479,7 +837,7 @@ def _series_status(series: Dict, processed_cache: Dict[str, int]) -> Tuple[int, 
         path = ef.get("path") or ef.get("relativePath")
         if not path:
             continue
-        src = translate_path(path)
+        src = translate_sonarr_path(path)
         if not src.exists():
             continue
         total += 1
@@ -572,8 +930,22 @@ def interactive_select_series() -> List[int]:
         print("--interactive requested but no TTY is attached; aborting.")
         raise SystemExit(2)
 
-    tag_id = find_tag_id(SONARR_TAG_NAME)
-    series_all = get_series_with_tag(tag_id)
+    try:
+        series_all = sonarr_get("/series").json()
+    except Exception as exc:
+        report_error_and_exit("Failed to get series from Sonarr", exc)
+
+    _, routes, _ = load_effective_routes()
+    sonarr_routes = _group_routes_by_source(routes).get("sonarr", [])
+    if sonarr_routes:
+        tag_lookup = get_tag_lookup("sonarr")
+        filtered = []
+        for series in series_all:
+            tags = _normalize_tag_ids(series.get("tags"))
+            if _find_route_for_item(tags, sonarr_routes, tag_lookup) is not None:
+                filtered.append(series)
+        series_all = filtered
+
     if not series_all:
         print("No series found to process.")
         return []
@@ -623,7 +995,7 @@ def interactive_select_series() -> List[int]:
 
 # -------------------- CLI --------------------
 def parse_args():
-    p = argparse.ArgumentParser(description="Sync Sonarr-tagged media to Tdarr and restore outputs.")
+    p = argparse.ArgumentParser(description="Sync tagged media to Tdarr and restore outputs.")
     p.add_argument("--dry-run", action="store_true", help="Log intended actions without writing.")
     p.add_argument("--skip-restore", action="store_true", help="Skip restore phase.")
     p.add_argument("--interactive", action="store_true", help="Prompt to select which series to process before copying.")
@@ -645,7 +1017,7 @@ def main():
             if selected_ids:
                 selection = {series_id: None for series_id in selected_ids}
 
-        process_sonarr_to_tdarr(dry_run=args.dry_run, selection=selection)
+        process_media_to_tdarr(dry_run=args.dry_run, selection=selection)
         if not args.skip_restore:
             move_tdarr_output_back(dry_run=args.dry_run)
             if not args.dry_run:
