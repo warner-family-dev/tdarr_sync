@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - Moved the active sync progress panel into a full-width dashboard pane between the summary cards and Recent Files.
 - Updated Tdarr queue reporting to derive current queued/error counts from `FileJSONDB`; historical job error totals can be enabled from Settings and are hidden by default.
 
+### Fixed
+- Added the missing `httpx` dependency required by FastAPI/Starlette `TestClient` and made `dev-docs/code_check.py` avoid stale cached pipx test environments.
+
 ## [2.2.2] - 2026-04-26
 ### Added
 - Added fail-closed API bearer-token authentication for every FastAPI endpoint except `/health`.
