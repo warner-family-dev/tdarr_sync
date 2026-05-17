@@ -62,6 +62,7 @@ class TdarrStatus(BaseModel):
     error: Optional[str] = None
     queue_count: Optional[int] = None
     error_count: Optional[int] = None
+    job_error_count: Optional[int] = None
     active_worker_count: int = 0
     workers: List[TdarrWorkerStatus] = Field(default_factory=list)
     nodes: List[TdarrNodeStatus] = Field(default_factory=list)

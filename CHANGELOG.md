@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Moved the active sync progress panel into a full-width dashboard pane between the summary cards and Recent Files.
+- Updated Tdarr queue reporting to derive current queued/error counts from `FileJSONDB` and show historical job error counts from `JobsJSONDB`.
 
 ## [2.2.2] - 2026-04-26
 ### Added

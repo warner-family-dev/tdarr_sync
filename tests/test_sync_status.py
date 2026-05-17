@@ -6,8 +6,39 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+os.environ.setdefault("API_AUTH_TOKEN", "tdarr-sync-test-api-token")
 os.environ.setdefault("STATE_DB_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test-state.db"))
 os.environ.setdefault("LOG_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test.log"))
+
+try:
+    import pydantic  # noqa: F401
+except Exception:
+    pydantic_stub = types.ModuleType("pydantic")
+
+    class _BaseModel:
+        def __init__(self, **data):
+            for key, value in data.items():
+                if key == "progress" and isinstance(value, dict):
+                    value = sys.modules["api.schemas"].SyncProgress(**value)
+                elif key == "tdarr" and isinstance(value, dict):
+                    value = sys.modules["api.schemas"].TdarrStatus(**value)
+                elif key == "workers" and isinstance(value, list):
+                    value = [sys.modules["api.schemas"].TdarrWorkerStatus(**item) if isinstance(item, dict) else item for item in value]
+                elif key == "nodes" and isinstance(value, list):
+                    value = [sys.modules["api.schemas"].TdarrNodeStatus(**item) if isinstance(item, dict) else item for item in value]
+                setattr(self, key, value)
+
+        def model_dump(self):
+            return dict(self.__dict__)
+
+    def _field(default=None, default_factory=None, **_kwargs):
+        if default_factory is not None:
+            return default_factory()
+        return default
+
+    pydantic_stub.BaseModel = _BaseModel
+    pydantic_stub.Field = _field
+    sys.modules["pydantic"] = pydantic_stub
 
 try:
     import fastapi  # noqa: F401
@@ -26,6 +57,12 @@ except Exception:
 
         def add_middleware(self, *args, **kwargs):
             pass
+
+        def middleware(self, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
 
         def on_event(self, *args, **kwargs):
             def decorator(func):
@@ -61,12 +98,24 @@ except Exception:
     fastapi_stub.FastAPI = _FastAPI
     fastapi_stub.HTTPException = _HTTPException
     fastapi_stub.Query = _query
+    fastapi_stub.Request = object
     middleware_stub = types.ModuleType("fastapi.middleware")
     cors_stub = types.ModuleType("fastapi.middleware.cors")
     cors_stub.CORSMiddleware = object
     sys.modules["fastapi"] = fastapi_stub
     sys.modules["fastapi.middleware"] = middleware_stub
     sys.modules["fastapi.middleware.cors"] = cors_stub
+    starlette_stub = types.ModuleType("starlette")
+    responses_stub = types.ModuleType("starlette.responses")
+
+    class _JSONResponse:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    responses_stub.JSONResponse = _JSONResponse
+    sys.modules["starlette"] = starlette_stub
+    sys.modules["starlette.responses"] = responses_stub
 
 from api.main import sync_status  # noqa: E402
 from api.tdarr_client import TdarrClient  # noqa: E402
@@ -234,6 +283,39 @@ class TdarrClientTests(unittest.TestCase):
         self.assertEqual(payload["nodes"][0]["workers"][0]["id"], "male-mutt")
         self.assertEqual(payload["nodes"][0]["workers"][0]["node"], "Windows-Node")
         self.assertEqual(payload["nodes"][0]["workers"][0]["progress"], 50.0)
+
+    def test_tdarr_counts_queue_and_errors_from_file_and_job_tables(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+
+        def fake_request(method, path, **kwargs):
+            if path == "/api/v2/status":
+                return {"status": "good"}
+            if path == "/api/v2/get-nodes":
+                return {"nodes": []}
+            if path == "/api/v2/cruddb":
+                collection = kwargs["json"]["data"]["collection"]
+                if collection == "StatisticsJSONDB":
+                    return [{"DBQueue": 0}]
+                if collection == "FileJSONDB":
+                    return [
+                        {"file": "/media/queued.mkv", "HealthCheck": "Queued", "TranscodeDecisionMaker": "Queued"},
+                        {"file": "/media/current-error.mkv", "TranscodeDecisionMaker": "Transcode error"},
+                        {"file": "/media/complete.mkv", "HealthCheck": "Success"},
+                    ]
+                if collection == "JobsJSONDB":
+                    return [
+                        {"file": "/media/old-success.mkv", "status": "Transcode success"},
+                        {"file": "/media/old-error.mkv", "status": "Transcode error"},
+                        {"file": "/media/old-health-error.mkv", "status": "Error"},
+                    ]
+            raise AssertionError(path)
+
+        with patch.object(client, "_request_json", side_effect=fake_request):
+            payload = client.fetch_status()
+
+        self.assertEqual(payload["queue_count"], 1)
+        self.assertEqual(payload["error_count"], 1)
+        self.assertEqual(payload["job_error_count"], 2)
 
 
 if __name__ == "__main__":

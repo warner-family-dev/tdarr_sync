@@ -82,6 +82,7 @@ type TdarrStatus = {
   error: string | null;
   queue_count: number | null;
   error_count: number | null;
+  job_error_count: number | null;
   active_worker_count: number;
   workers: TdarrWorkerStatus[];
   nodes: TdarrNodeStatus[];
@@ -320,8 +321,12 @@ export default async function DashboardPage() {
                 <strong>{status.tdarr.queue_count ?? "—"}</strong>
               </span>
               <span>
-                Errors:
+                Current errors:
                 <strong>{status.tdarr.error_count ?? "—"}</strong>
+              </span>
+              <span>
+                Job errors:
+                <strong>{status.tdarr.job_error_count ?? "—"}</strong>
               </span>
               {status.tdarr.error && <p className="muted">{status.tdarr.error}</p>}
               {activeTdarrNodes.length === 0 && fallbackTdarrWorkers.length === 0 && <p className="muted">No active transcodes reported.</p>}
