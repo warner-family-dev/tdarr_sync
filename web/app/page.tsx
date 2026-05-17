@@ -82,6 +82,8 @@ type TdarrStatus = {
   error: string | null;
   queue_count: number | null;
   error_count: number | null;
+  job_error_count: number | null;
+  show_job_error_count: boolean;
   active_worker_count: number;
   workers: TdarrWorkerStatus[];
   nodes: TdarrNodeStatus[];
@@ -271,30 +273,6 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
-          {status?.running && status.progress && (
-            <div className="sync-progress-panel">
-              <div className="sync-progress-header">
-                <strong>{phaseLabel(status.progress.phase)}</strong>
-                <span>{status.progress.percent !== null ? `${status.progress.percent.toFixed(1)}%` : "Scanning"}</span>
-              </div>
-              <ProgressBar percent={status.progress.percent} />
-              <div className="sync-progress-meta">
-                <span>
-                  {status.progress.completed_items}
-                  {status.progress.total_items !== null ? ` / ${status.progress.total_items}` : ""} items
-                </span>
-                <span>Skipped: {status.progress.skipped_items}</span>
-                <span>Failed: {status.progress.failed_items}</span>
-                <span>ETA: {formatDuration(status.progress.eta_seconds)}</span>
-              </div>
-              <div className="sync-progress-current">
-                <span>{status.progress.action || "working"}</span>
-                {status.progress.title && <strong>{status.progress.title}</strong>}
-                {status.progress.path && <code>{status.progress.path}</code>}
-                {status.progress.message && <span>{status.progress.message}</span>}
-              </div>
-            </div>
-          )}
           <TriggerSyncControl disabled={status?.running ?? false} />
           <div className="restore-launch">
             <RestoreOriginals />
@@ -344,9 +322,15 @@ export default async function DashboardPage() {
                 <strong>{status.tdarr.queue_count ?? "—"}</strong>
               </span>
               <span>
-                Errors:
+                Current errors:
                 <strong>{status.tdarr.error_count ?? "—"}</strong>
               </span>
+              {status.tdarr.show_job_error_count && (
+                <span>
+                  Job errors:
+                  <strong>{status.tdarr.job_error_count ?? "—"}</strong>
+                </span>
+              )}
               {status.tdarr.error && <p className="muted">{status.tdarr.error}</p>}
               {activeTdarrNodes.length === 0 && fallbackTdarrWorkers.length === 0 && <p className="muted">No active transcodes reported.</p>}
               {activeTdarrNodes.map((node) => (
@@ -401,6 +385,34 @@ export default async function DashboardPage() {
           )}
         </article>
       </section>
+
+      {status?.running && status.progress && (
+        <section className="card sync-progress-card">
+          <h2>Sync Progress</h2>
+          <div className="sync-progress-panel">
+            <div className="sync-progress-header">
+              <strong>{phaseLabel(status.progress.phase)}</strong>
+              <span>{status.progress.percent !== null ? `${status.progress.percent.toFixed(1)}%` : "Scanning"}</span>
+            </div>
+            <ProgressBar percent={status.progress.percent} />
+            <div className="sync-progress-meta">
+              <span>
+                {status.progress.completed_items}
+                {status.progress.total_items !== null ? ` / ${status.progress.total_items}` : ""} items
+              </span>
+              <span>Skipped: {status.progress.skipped_items}</span>
+              <span>Failed: {status.progress.failed_items}</span>
+              <span>ETA: {formatDuration(status.progress.eta_seconds)}</span>
+            </div>
+            <div className="sync-progress-current">
+              <span>{status.progress.action || "working"}</span>
+              {status.progress.title && <strong>{status.progress.title}</strong>}
+              {status.progress.path && <code>{status.progress.path}</code>}
+              {status.progress.message && <span>{status.progress.message}</span>}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <h2>Recent Files</h2>

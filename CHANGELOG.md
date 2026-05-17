@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.2.3] - 2026-05-17
+### Added
+- Started v2.2.3 development changelog tracking.
+
+### Changed
+- Moved the active sync progress panel into a full-width dashboard pane between the summary cards and Recent Files.
+- Updated Tdarr queue reporting to derive current queued/error counts from `FileJSONDB`; historical job error totals can be enabled from Settings and are hidden by default.
+
+### Fixed
+- Added the missing `httpx` dependency required by FastAPI/Starlette `TestClient` so API auth tests collect in CI.
+
 ## [2.2.2] - 2026-04-26
 ### Added
 - Added fail-closed API bearer-token authentication for every FastAPI endpoint except `/health`.
@@ -136,6 +147,7 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
+[2.2.3]: https://github.com/keatre/tdarr_sync/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/keatre/tdarr_sync/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...v2.2.0

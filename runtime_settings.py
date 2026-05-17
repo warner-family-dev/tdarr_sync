@@ -20,6 +20,7 @@ def default_runtime_settings() -> Dict[str, Any]:
     return {
         "tdarr_server_url": "",
         "tdarr_api_key": "",
+        "show_job_error_count": False,
         "routes": [],
     }
 
@@ -47,6 +48,7 @@ def normalize_runtime_settings_payload(payload: Dict[str, Any]) -> Dict[str, Any
 
     tdarr_server_url = str(payload.get("tdarr_server_url", "")).strip()
     tdarr_api_key = str(payload.get("tdarr_api_key", "")).strip()
+    show_job_error_count = bool(payload.get("show_job_error_count", False))
 
     routes_raw = payload.get("routes", [])
     if routes_raw is None:
@@ -90,6 +92,7 @@ def normalize_runtime_settings_payload(payload: Dict[str, Any]) -> Dict[str, Any
     return {
         "tdarr_server_url": tdarr_server_url,
         "tdarr_api_key": tdarr_api_key,
+        "show_job_error_count": show_job_error_count,
         "routes": normalized_routes,
     }
 

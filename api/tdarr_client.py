@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
 from runtime_settings import load_runtime_settings
+
+
+JOB_ERROR_CACHE_TTL_SECONDS = 60
+_JOB_ERROR_COUNT_CACHE: Dict[str, Tuple[float, Optional[int]]] = {}
 
 
 def _walk_dicts(value: Any) -> Iterable[Dict[str, Any]]:
@@ -75,6 +80,71 @@ def _first_eta(item: Dict[str, Any]) -> Optional[int]:
             return max(0, int(float(value)))
         except (TypeError, ValueError):
             continue
+    return None
+
+
+def _records_from_payload(payload: Any) -> List[Dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        if {"statusCode", "error", "message", "code"}.intersection(payload):
+            return []
+        return [item for item in payload.values() if isinstance(item, dict)]
+    return []
+
+
+def _status_values(item: Dict[str, Any]) -> List[str]:
+    values: List[str] = []
+    for key, value in item.items():
+        normalized = key.lower().replace("_", "").replace("-", "")
+        if normalized not in {
+            "healthcheck",
+            "transcodedecisionmaker",
+            "status",
+            "state",
+            "stage",
+            "error",
+            "reason",
+        }:
+            continue
+        if value is not None:
+            values.append(str(value).strip().lower())
+    return [value for value in values if value]
+
+
+def _has_error_status(item: Dict[str, Any]) -> bool:
+    return any("error" in value or "fail" in value for value in _status_values(item))
+
+
+def _has_queued_status(item: Dict[str, Any]) -> bool:
+    return any("queued" in value or "queue" in value for value in _status_values(item))
+
+
+def _file_queue_count(file_payload: Any) -> Optional[int]:
+    records = _records_from_payload(file_payload)
+    if not records:
+        return None
+    return sum(1 for item in records if _has_queued_status(item))
+
+
+def _file_error_count(file_payload: Any) -> Optional[int]:
+    records = _records_from_payload(file_payload)
+    if not records:
+        return None
+    return sum(1 for item in records if _has_error_status(item))
+
+
+def _job_error_count(jobs_payload: Any) -> Optional[int]:
+    records = _records_from_payload(jobs_payload)
+    if not records:
+        return None
+    return sum(1 for item in records if _has_error_status(item))
+
+
+def _first_non_none(*values: Optional[int]) -> Optional[int]:
+    for value in values:
+        if value is not None:
+            return value
     return None
 
 
@@ -267,10 +337,34 @@ class TdarrClient:
             return {}
         return response.json()
 
-    def fetch_status(self) -> Dict[str, Any]:
+    def _fetch_collection(self, collection: str) -> Any:
+        return self._request_json(
+            "POST",
+            "/api/v2/cruddb",
+            json={"data": {"collection": collection, "mode": "getAll"}},
+        )
+
+    def _fetch_job_error_count(self) -> Optional[int]:
+        now = time.monotonic()
+        cached = _JOB_ERROR_COUNT_CACHE.get(self.server_url)
+        if cached and now - cached[0] < JOB_ERROR_CACHE_TTL_SECONDS:
+            return cached[1]
+
+        try:
+            jobs_payload = self._fetch_collection("JobsJSONDB")
+        except Exception:
+            return None
+
+        count = _job_error_count(jobs_payload)
+        if count is not None:
+            _JOB_ERROR_COUNT_CACHE[self.server_url] = (now, count)
+        return count
+
+    def fetch_status(self, *, include_job_error_count: bool = False) -> Dict[str, Any]:
         status_payload: Any = {}
         nodes_payload: Any = {}
         stats_payload: Any = {}
+        file_payload: Any = {}
 
         try:
             status_payload = self._request_json("GET", "/api/v2/status")
@@ -283,14 +377,18 @@ class TdarrClient:
             nodes_payload = {"_tdarr_sync_warning": f"nodes: {exc}"}
 
         try:
-            stats_payload = self._request_json(
-                "POST",
-                "/api/v2/cruddb",
-                json={"data": {"collection": "StatisticsJSONDB", "mode": "getAll"}},
-            )
+            stats_payload = self._fetch_collection("StatisticsJSONDB")
         except Exception:
             stats_payload = {}
 
+        try:
+            file_payload = self._fetch_collection("FileJSONDB")
+        except Exception:
+            file_payload = {}
+
+        inferred_queue_count = _file_queue_count(file_payload)
+        inferred_error_count = _file_error_count(file_payload)
+        job_error_count = self._fetch_job_error_count() if include_job_error_count else None
         nodes = _extract_nodes(nodes_payload)
         workers = [worker for node in nodes for worker in node["workers"]]
         return {
@@ -298,14 +396,22 @@ class TdarrClient:
             "reachable": True,
             "server_url": self.server_url,
             "error": nodes_payload.get("_tdarr_sync_warning") if isinstance(nodes_payload, dict) else None,
-            "queue_count": _first_number(
-                [status_payload, stats_payload],
-                {"queue", "queued", "queuecount", "queuedcount", "transcodequeue", "transcodequeuecount"},
+            "queue_count": _first_non_none(
+                inferred_queue_count,
+                _first_number(
+                    [status_payload, stats_payload],
+                    {"queue", "queued", "queuecount", "queuedcount", "transcodequeue", "transcodequeuecount", "dbqueue"},
+                ),
             ),
-            "error_count": _first_number(
-                [status_payload, stats_payload],
-                {"error", "errors", "errorcount", "errored", "failed", "failedcount"},
+            "error_count": _first_non_none(
+                inferred_error_count,
+                _first_number(
+                    [status_payload, stats_payload],
+                    {"error", "errors", "errorcount", "errored", "failed", "failedcount"},
+                ),
             ),
+            "job_error_count": job_error_count,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": len(workers),
             "workers": workers,
             "nodes": nodes,
@@ -316,6 +422,7 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
     settings = load_runtime_settings(runtime_settings_file)
     server_url = str(settings.get("tdarr_server_url", "")).strip()
     api_key = str(settings.get("tdarr_api_key", "")).strip()
+    include_job_error_count = bool(settings.get("show_job_error_count", False))
 
     if not server_url:
         return {
@@ -325,13 +432,15 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
             "error": "Tdarr server URL is not configured.",
             "queue_count": None,
             "error_count": None,
+            "job_error_count": None,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": 0,
             "workers": [],
             "nodes": [],
         }
 
     try:
-        return TdarrClient(server_url, api_key).fetch_status()
+        return TdarrClient(server_url, api_key).fetch_status(include_job_error_count=include_job_error_count)
     except Exception as exc:
         return {
             "configured": True,
@@ -340,6 +449,8 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
             "error": str(exc),
             "queue_count": None,
             "error_count": None,
+            "job_error_count": None,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": 0,
             "workers": [],
             "nodes": [],
