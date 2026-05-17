@@ -1,12 +1,14 @@
 import logging
 import os
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from logging.handlers import WatchedFileHandler
+from starlette.responses import JSONResponse
 
 from . import db, schemas
 from .build_version import resolve_build_version
@@ -57,15 +59,33 @@ if not logger.handlers:
 
 
 app = FastAPI(title="Tdarr Sync API", version="0.1.0")
+API_AUTH_TOKEN = settings.require_api_auth_token()
 
 allow_origins = ["*"] if settings.allow_all_cors else settings.cors_allow_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins or ["http://localhost:3000"],
-    allow_credentials=True,
+    allow_credentials=not settings.allow_all_cors,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def require_bearer_auth(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path == "/health":
+        return await call_next(request)
+
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token or not secrets.compare_digest(token.strip(), API_AUTH_TOKEN):
+        return JSONResponse(
+            {"detail": "Unauthorized"},
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await call_next(request)
 
 runner = SyncRunner(settings.sync_script_path, settings.sync_python_executable, settings.sync_progress_file)
 
