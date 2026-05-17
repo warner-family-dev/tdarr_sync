@@ -132,6 +132,8 @@ class SyncStatusApiTests(unittest.TestCase):
                 "error": "Tdarr server URL is not configured.",
                 "queue_count": None,
                 "error_count": None,
+                "job_error_count": None,
+                "show_job_error_count": False,
                 "active_worker_count": 0,
                 "workers": [],
                 "nodes": [],
@@ -175,6 +177,8 @@ class SyncStatusApiTests(unittest.TestCase):
                 "error": "connection failed",
                 "queue_count": None,
                 "error_count": None,
+                "job_error_count": None,
+                "show_job_error_count": False,
                 "active_worker_count": 0,
                 "workers": [],
                 "nodes": [],
@@ -311,11 +315,39 @@ class TdarrClientTests(unittest.TestCase):
             raise AssertionError(path)
 
         with patch.object(client, "_request_json", side_effect=fake_request):
-            payload = client.fetch_status()
+            payload = client.fetch_status(include_job_error_count=True)
 
         self.assertEqual(payload["queue_count"], 1)
         self.assertEqual(payload["error_count"], 1)
         self.assertEqual(payload["job_error_count"], 2)
+        self.assertTrue(payload["show_job_error_count"])
+
+    def test_tdarr_job_error_count_is_skipped_by_default(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+        requested_collections = []
+
+        def fake_request(method, path, **kwargs):
+            if path == "/api/v2/status":
+                return {"status": "good"}
+            if path == "/api/v2/get-nodes":
+                return {"nodes": []}
+            if path == "/api/v2/cruddb":
+                collection = kwargs["json"]["data"]["collection"]
+                requested_collections.append(collection)
+                if collection == "StatisticsJSONDB":
+                    return [{"DBQueue": 0}]
+                if collection == "FileJSONDB":
+                    return []
+                if collection == "JobsJSONDB":
+                    raise AssertionError("JobsJSONDB should not be queried by default")
+            raise AssertionError(path)
+
+        with patch.object(client, "_request_json", side_effect=fake_request):
+            payload = client.fetch_status()
+
+        self.assertIsNone(payload["job_error_count"])
+        self.assertFalse(payload["show_job_error_count"])
+        self.assertNotIn("JobsJSONDB", requested_collections)
 
 
 if __name__ == "__main__":

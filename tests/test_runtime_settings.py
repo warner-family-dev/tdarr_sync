@@ -6,11 +6,16 @@ from runtime_settings import load_runtime_settings, normalize_runtime_settings_p
 
 
 class RuntimeSettingsTests(unittest.TestCase):
+    def test_job_error_count_display_defaults_off(self):
+        payload = normalize_runtime_settings_payload({"routes": []})
+        self.assertFalse(payload["show_job_error_count"])
+
     def test_normalize_generates_subdir_from_flow_name(self):
         payload = normalize_runtime_settings_payload(
             {
                 "tdarr_server_url": "http://tdarr.local:8266",
                 "tdarr_api_key": "tapi_example",
+                "show_job_error_count": True,
                 "routes": [
                     {
                         "source": "sonarr",
@@ -21,6 +26,7 @@ class RuntimeSettingsTests(unittest.TestCase):
             }
         )
         self.assertEqual(payload["routes"][0]["input_subdir"], "reality-tv-to-720p")
+        self.assertTrue(payload["show_job_error_count"])
 
     def test_rejects_duplicate_source_tag(self):
         with self.assertRaises(ValueError):
@@ -55,6 +61,7 @@ class RuntimeSettingsTests(unittest.TestCase):
                 {
                     "tdarr_server_url": "http://192.168.4.55:8266",
                     "tdarr_api_key": "tapi_u1FhxMJ3z",
+                    "show_job_error_count": True,
                     "routes": [
                         {
                             "source": "sonarr",

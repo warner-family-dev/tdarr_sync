@@ -15,6 +15,7 @@ type TagFlowRoute = {
 type RoutingSettingsPayload = {
   tdarr_server_url: string;
   tdarr_api_key: string;
+  show_job_error_count: boolean;
   routes: TagFlowRoute[];
 };
 
@@ -35,6 +36,7 @@ export default function RoutingSettings() {
   const [settings, setSettings] = useState<RoutingSettingsPayload>({
     tdarr_server_url: "",
     tdarr_api_key: "",
+    show_job_error_count: false,
     routes: [],
   });
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,7 @@ export default function RoutingSettings() {
       setSettings({
         tdarr_server_url: payload.tdarr_server_url ?? "",
         tdarr_api_key: payload.tdarr_api_key ?? "",
+        show_job_error_count: Boolean(payload.show_job_error_count),
         routes: Array.isArray(payload.routes)
           ? payload.routes.map((route) => ({
               source: route.source,
@@ -129,6 +132,7 @@ export default function RoutingSettings() {
         const payload: RoutingSettingsPayload = {
           tdarr_server_url: settings.tdarr_server_url.trim(),
           tdarr_api_key: settings.tdarr_api_key.trim(),
+          show_job_error_count: settings.show_job_error_count,
           routes: settings.routes.map((route) => ({
             source: route.source,
             tag: route.tag.trim(),
@@ -144,6 +148,7 @@ export default function RoutingSettings() {
         setSettings({
           tdarr_server_url: saved.tdarr_server_url ?? "",
           tdarr_api_key: saved.tdarr_api_key ?? "",
+          show_job_error_count: Boolean(saved.show_job_error_count),
           routes: saved.routes ?? [],
         });
         setFeedback("Routing settings saved.");
@@ -182,6 +187,17 @@ export default function RoutingSettings() {
           />
         </label>
       </div>
+
+      <label className="checkbox-inline">
+        <input
+          type="checkbox"
+          checked={settings.show_job_error_count}
+          onChange={(event) =>
+            setSettings((prev) => ({ ...prev, show_job_error_count: event.target.checked }))
+          }
+        />
+        <span>Show historical Tdarr job error total</span>
+      </label>
 
       <p className="muted">
         Route order matters. The first matching tag per source wins, and files are copied into the configured Tdarr

@@ -360,7 +360,7 @@ class TdarrClient:
             _JOB_ERROR_COUNT_CACHE[self.server_url] = (now, count)
         return count
 
-    def fetch_status(self) -> Dict[str, Any]:
+    def fetch_status(self, *, include_job_error_count: bool = False) -> Dict[str, Any]:
         status_payload: Any = {}
         nodes_payload: Any = {}
         stats_payload: Any = {}
@@ -388,7 +388,7 @@ class TdarrClient:
 
         inferred_queue_count = _file_queue_count(file_payload)
         inferred_error_count = _file_error_count(file_payload)
-        job_error_count = self._fetch_job_error_count()
+        job_error_count = self._fetch_job_error_count() if include_job_error_count else None
         nodes = _extract_nodes(nodes_payload)
         workers = [worker for node in nodes for worker in node["workers"]]
         return {
@@ -411,6 +411,7 @@ class TdarrClient:
                 ),
             ),
             "job_error_count": job_error_count,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": len(workers),
             "workers": workers,
             "nodes": nodes,
@@ -421,6 +422,7 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
     settings = load_runtime_settings(runtime_settings_file)
     server_url = str(settings.get("tdarr_server_url", "")).strip()
     api_key = str(settings.get("tdarr_api_key", "")).strip()
+    include_job_error_count = bool(settings.get("show_job_error_count", False))
 
     if not server_url:
         return {
@@ -431,13 +433,14 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
             "queue_count": None,
             "error_count": None,
             "job_error_count": None,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": 0,
             "workers": [],
             "nodes": [],
         }
 
     try:
-        return TdarrClient(server_url, api_key).fetch_status()
+        return TdarrClient(server_url, api_key).fetch_status(include_job_error_count=include_job_error_count)
     except Exception as exc:
         return {
             "configured": True,
@@ -447,6 +450,7 @@ def fetch_tdarr_status(runtime_settings_file: Path) -> Dict[str, Any]:
             "queue_count": None,
             "error_count": None,
             "job_error_count": None,
+            "show_job_error_count": include_job_error_count,
             "active_worker_count": 0,
             "workers": [],
             "nodes": [],

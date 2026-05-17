@@ -63,6 +63,7 @@ class TdarrStatus(BaseModel):
     queue_count: Optional[int] = None
     error_count: Optional[int] = None
     job_error_count: Optional[int] = None
+    show_job_error_count: bool = False
     active_worker_count: int = 0
     workers: List[TdarrWorkerStatus] = Field(default_factory=list)
     nodes: List[TdarrNodeStatus] = Field(default_factory=list)
@@ -122,6 +123,7 @@ class TagFlowRoute(BaseModel):
 class RoutingSettings(BaseModel):
     tdarr_server_url: str = ""
     tdarr_api_key: str = ""
+    show_job_error_count: bool = False
     routes: List[TagFlowRoute] = Field(default_factory=list)
 
 
