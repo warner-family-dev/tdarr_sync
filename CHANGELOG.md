@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Updated Tdarr queue reporting to derive current queued/error counts from `FileJSONDB`; historical job error totals can be enabled from Settings and are hidden by default.
 
 ### Fixed
-- Added the missing `httpx` dependency required by FastAPI/Starlette `TestClient` and made `dev-docs/code_check.py` avoid stale cached pipx test environments.
+- Added the missing `httpx` dependency required by FastAPI/Starlette `TestClient` so API auth tests collect in CI.
 
 ## [2.2.2] - 2026-04-26
 ### Added
