@@ -1,7 +1,3 @@
-function stripTrailingSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
-
 function ensureLeadingSlash(path: string): string {
   if (!path.startsWith("/")) {
     return `/${path}`;
@@ -9,29 +5,17 @@ function ensureLeadingSlash(path: string): string {
   return path;
 }
 
-function resolveApiBase(): string {
-  if (typeof window !== "undefined") {
-    const publicOrigin = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-    if (publicOrigin) {
-      return stripTrailingSlash(publicOrigin);
-    }
-  }
-
-  const backendOrigin = process.env.NEXT_BACKEND_ORIGIN?.trim();
-  if (backendOrigin && backendOrigin.length > 0) {
-    return stripTrailingSlash(backendOrigin);
-  }
-
-  return "/tdarr-api";
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
 }
 
 function buildUrl(path: string): string {
-  const apiBase = resolveApiBase();
   const normalizedPath = ensureLeadingSlash(path);
-  if (apiBase.startsWith("http")) {
-    return `${apiBase}${normalizedPath}`;
+  if (typeof window === "undefined") {
+    const backendOrigin = stripTrailingSlash(process.env.NEXT_BACKEND_ORIGIN?.trim() || "http://api:8000");
+    return `${backendOrigin}${normalizedPath}`;
   }
-  return `${apiBase}${normalizedPath}`;
+  return `/tdarr-api${normalizedPath}`;
 }
 
 export function apiUrl(path: string): string {
@@ -39,7 +23,17 @@ export function apiUrl(path: string): string {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(buildUrl(path), init);
+  const requestInit = { ...(init || {}) };
+  if (typeof window === "undefined") {
+    const token = process.env.API_AUTH_TOKEN?.trim();
+    if (!token) {
+      throw new Error("API_AUTH_TOKEN is not configured for server-side API requests.");
+    }
+    const headers = new Headers(requestInit.headers);
+    headers.set("authorization", `Bearer ${token}`);
+    requestInit.headers = headers;
+  }
+  return fetch(buildUrl(path), requestInit);
 }
 
 export async function apiFetchJson<T>(path: string, init?: RequestInit): Promise<T> {

@@ -6,6 +6,17 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
+PLACEHOLDER_AUTH_TOKENS = {
+    "change-me",
+    "change-me-long-random-token",
+    "changeme",
+    "please-change-me",
+    "replace-me",
+    "secret",
+    "password",
+}
+
+
 def _bool_env(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -22,8 +33,9 @@ class Settings:
     log_file: Optional[Path] = field(default=None)
     sync_script_path: Path = field(default_factory=lambda: Path(os.getenv("SYNC_SCRIPT_PATH", "/app/tdarr_sync.py")))
     sync_python_executable: str = field(default_factory=lambda: os.getenv("SYNC_PYTHON_EXECUTABLE", sys.executable or "python"))
+    api_auth_token: str = field(default_factory=lambda: os.getenv("API_AUTH_TOKEN", "").strip())
     cors_allow_origins: List[str] = field(default_factory=list)
-    allow_all_cors: bool = field(default_factory=lambda: _bool_env("API_CORS_ALLOW_ALL", True))
+    allow_all_cors: bool = field(default_factory=lambda: _bool_env("API_CORS_ALLOW_ALL", False))
 
     def __post_init__(self):
         log_env = os.getenv("LOG_FILE", "/logs/tdarr_sync.log")
@@ -47,6 +59,12 @@ class Settings:
             # Fall back to localhost if custom list not provided and allow_all_cors is false
             self.cors_allow_origins = ["http://localhost:3000"]
 
+    def require_api_auth_token(self) -> str:
+        token = self.api_auth_token.strip()
+        if not token or token.lower() in PLACEHOLDER_AUTH_TOKENS:
+            raise RuntimeError("API_AUTH_TOKEN must be set to a non-placeholder value before starting the API.")
+        return token
+
     @property
     def zoneinfo(self) -> ZoneInfo:
         try:
@@ -62,6 +80,7 @@ class Settings:
             "sync_progress_file": str(self.sync_progress_file),
             "log_file": str(self.log_file) if self.log_file else None,
             "sync_script_path": str(self.sync_script_path),
+            "api_auth_configured": bool(self.api_auth_token),
             "cors_allow_all": self.allow_all_cors,
             "cors_allow_origins": self.cors_allow_origins,
             "sonarr": {

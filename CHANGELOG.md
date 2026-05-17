@@ -1,6 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.2.2] - 2026-04-26
+### Added
+- Added fail-closed API bearer-token authentication for every FastAPI endpoint except `/health`.
+- Added a server-side Next.js `/tdarr-api/*` proxy that injects the API bearer token without exposing it to the browser.
+- Added API authentication tests covering public health checks, missing tokens, invalid tokens, and valid-token access.
+- Added a committed `web/package-lock.json` so web dependency installs are reproducible.
+
+### Changed
+- Tightened API CORS defaults so wildcard CORS is disabled by default and localhost is the default allowed browser origin.
+- Bound the Docker Compose API port to `127.0.0.1` so direct FastAPI access is local-only by default.
+- Updated the dashboard API client to always call the same-origin server-side proxy instead of using browser-visible API origins.
+- Migrated the web app to Next.js 16, ESLint 9 flat config, and `npm ci` based Docker installs.
+- Updated Python and web dependencies to patched versions and documented the new `API_AUTH_TOKEN`, `API_CORS_ALLOW_ALL`, and `API_CORS_ALLOW_ORIGINS` settings.
+
+### Security
+- Remediated known Python dependency vulnerabilities reported for `requests`, `python-dotenv`, and transitive `starlette`.
+- Remediated known npm dependency vulnerabilities reported for Next.js, PostCSS, and related lint tooling dependencies.
+- Removed browser exposure of backend API credentials by keeping the shared bearer token server-side only.
+
 ## [2.2.1] - 2026-04-26
 ### Added
 - Added sync progress snapshots at `SYNC_PROGRESS_FILE` so active runs report phase, current item, counts, percent complete, skipped/failed totals, and best-effort ETA.
@@ -117,6 +136,8 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
+[2.2.2]: https://github.com/keatre/tdarr_sync/compare/v2.2.1...v2.2.2
+[2.2.1]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/keatre/tdarr_sync/compare/v2.0.4...v2.2.0
 [2.0.4]: https://github.com/keatre/tdarr_sync/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/keatre/tdarr_sync/compare/v2.0.2...v2.0.3
