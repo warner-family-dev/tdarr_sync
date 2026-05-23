@@ -49,10 +49,31 @@ type DatabaseRemovalControlProps = {
   displayTimezone: string;
 };
 
+type Category = "tv" | "movies" | "folders";
+
+type ViewState =
+  | { level: "root" }
+  | { level: "category"; category: Category }
+  | { level: "group"; category: Category; groupId: string }
+  | { level: "season"; category: "tv"; groupId: string; seasonNumber: number };
+
+const ROOT_VIEW: ViewState = { level: "root" };
+
 function buildErrorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
   return "Unable to update database records.";
+}
+
+function categoryLabel(category: Category): string {
+  switch (category) {
+    case "tv":
+      return "TV Shows";
+    case "movies":
+      return "Movies";
+    default:
+      return "Other Folders";
+  }
 }
 
 function collectGroupPaths(group: ProcessedDatabaseGroup): string[] {
@@ -75,14 +96,19 @@ function formatTimestamp(iso: string | null | undefined, formatter: Intl.DateTim
   return formatter.format(date);
 }
 
-function selectionState(paths: string[], selectedPaths: Set<string>): boolean {
+function isFullySelected(paths: string[], selectedPaths: Set<string>): boolean {
   return paths.length > 0 && paths.every((path) => selectedPaths.has(path));
+}
+
+function pluralize(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
 export default function DatabaseRemovalControl({ disabled = false, displayTimezone }: DatabaseRemovalControlProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<ProcessedDatabaseCatalog | null>(null);
+  const [view, setView] = useState<ViewState>(ROOT_VIEW);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,8 +159,35 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     }
   }, []);
 
+  const groupsForCategory = useCallback(
+    (category: Category): ProcessedDatabaseGroup[] => {
+      if (!catalog) {
+        return [];
+      }
+      return catalog[category];
+    },
+    [catalog],
+  );
+
+  const currentGroup = useMemo(() => {
+    if (view.level !== "group" && view.level !== "season") {
+      return null;
+    }
+    return groupsForCategory(view.category).find((group) => group.id === view.groupId) ?? null;
+  }, [groupsForCategory, view]);
+
+  const currentSeason = useMemo(() => {
+    if (view.level !== "season" || !currentGroup) {
+      return null;
+    }
+    return currentGroup.seasons.find((season) => season.number === view.seasonNumber) ?? null;
+  }, [currentGroup, view]);
+
+  const selectedCount = selectedPaths.size;
+
   const openModal = () => {
     setOpen(true);
+    setView(ROOT_VIEW);
     setFeedback(null);
     void loadCatalog();
   };
@@ -144,6 +197,20 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       return;
     }
     setOpen(false);
+  };
+
+  const goBack = () => {
+    if (view.level === "season") {
+      setView({ level: "group", category: view.category, groupId: view.groupId });
+      return;
+    }
+    if (view.level === "group") {
+      setView({ level: "category", category: view.category });
+      return;
+    }
+    if (view.level === "category") {
+      setView(ROOT_VIEW);
+    }
   };
 
   const togglePaths = (paths: string[], enabled: boolean) => {
@@ -167,7 +234,7 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       return;
     }
 
-    const confirmed = window.confirm(`Remove ${paths.length} selected database record${paths.length === 1 ? "" : "s"}?`);
+    const confirmed = window.confirm(`Remove ${pluralize(paths.length, "selected database record")}?`);
     if (!confirmed) {
       return;
     }
@@ -184,6 +251,7 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       setSelectedPaths(new Set());
       setFeedback(`Removed ${response.deleted_count} of ${response.requested_count} selected database records.`);
       await loadCatalog();
+      setView(ROOT_VIEW);
       router.refresh();
     } catch (err) {
       setError(buildErrorMessage(err));
@@ -192,7 +260,143 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     }
   };
 
-  const renderFile = (file: ProcessedDatabaseFile) => (
+  const renderHeader = () => {
+    let title = "Database Records";
+    if (view.level === "category") {
+      title = categoryLabel(view.category);
+    } else if (view.level === "group" && currentGroup) {
+      title = currentGroup.title;
+    } else if (view.level === "season" && currentSeason) {
+      title = currentSeason.name;
+    }
+
+    return (
+      <div className="modal-section-header database-browser-header">
+        <div>
+          {view.level !== "root" && (
+            <button type="button" className="button ghost database-back" onClick={goBack} disabled={submitting}>
+              Back
+            </button>
+          )}
+          <h4>{title}</h4>
+        </div>
+        <button type="button" className="icon-button small" onClick={loadCatalog} disabled={loading || submitting}>
+          ↻
+        </button>
+      </div>
+    );
+  };
+
+  const renderRoot = () => {
+    if (!catalog) {
+      return null;
+    }
+
+    const categories = [
+      { category: "tv" as const, count: catalog.tv.length },
+      { category: "movies" as const, count: catalog.movies.length },
+      { category: "folders" as const, count: catalog.folders.length },
+    ].filter((item) => item.count > 0);
+
+    return (
+      <div className="database-drill-list">
+        {categories.map((item) => (
+          <button
+            key={item.category}
+            type="button"
+            className="database-drill-row"
+            onClick={() => setView({ level: "category", category: item.category })}
+          >
+            <span>{categoryLabel(item.category)}</span>
+            <small>{pluralize(item.count, item.category === "movies" ? "movie" : "group")}</small>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderCategory = () => {
+    if (view.level !== "category") {
+      return null;
+    }
+
+    const groups = groupsForCategory(view.category);
+    return (
+      <div className="database-drill-list">
+        {groups.map((group) => {
+          const paths = collectGroupPaths(group);
+          return (
+            <div key={group.id} className="database-select-row">
+              <label className="checkbox-inline">
+                <input
+                  type="checkbox"
+                  checked={isFullySelected(paths, selectedPaths)}
+                  onChange={(event) => togglePaths(paths, event.target.checked)}
+                />
+                <span>{group.title}</span>
+                <small>{pluralize(group.file_count, "record")}</small>
+              </label>
+              <button
+                type="button"
+                className="button ghost database-open"
+                onClick={() => setView({ level: "group", category: view.category, groupId: group.id })}
+              >
+                Open
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderGroup = () => {
+    if (view.level !== "group" || !currentGroup) {
+      return null;
+    }
+
+    if (view.category === "tv") {
+      return (
+        <div className="database-drill-list">
+          {currentGroup.seasons.map((season) => {
+            const paths = season.files.map((file) => file.file_path);
+            return (
+              <div key={`${currentGroup.id}-${season.number}`} className="database-select-row">
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={isFullySelected(paths, selectedPaths)}
+                    onChange={(event) => togglePaths(paths, event.target.checked)}
+                  />
+                  <span>{season.name}</span>
+                  <small>{pluralize(season.file_count, "record")}</small>
+                </label>
+                <button
+                  type="button"
+                  className="button ghost database-open"
+                  onClick={() => setView({ level: "season", category: "tv", groupId: currentGroup.id, seasonNumber: season.number })}
+                >
+                  Open
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return <div className="database-drill-list">{currentGroup.files.map(renderFileRow)}</div>;
+  };
+
+  const renderSeason = () => {
+    if (view.level !== "season" || !currentSeason) {
+      return null;
+    }
+
+    return <div className="database-drill-list">{currentSeason.files.map(renderFileRow)}</div>;
+  };
+
+  const renderFileRow = (file: ProcessedDatabaseFile) => (
     <label key={file.file_path} className="checkbox-inline database-file-row">
       <input
         type="checkbox"
@@ -204,58 +408,26 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     </label>
   );
 
-  const renderTvGroup = (group: ProcessedDatabaseGroup) => {
-    const groupPaths = collectGroupPaths(group);
-    return (
-      <div key={group.id} className="database-group">
-        <label className="checkbox-inline database-group-title">
-          <input
-            type="checkbox"
-            checked={selectionState(groupPaths, selectedPaths)}
-            onChange={(event) => togglePaths(groupPaths, event.target.checked)}
-          />
-          <strong>{group.title}</strong>
-          <span>{group.file_count} records</span>
-        </label>
-        <div className="database-sublist">
-          {group.seasons.map((season) => {
-            const seasonPaths = season.files.map((file) => file.file_path);
-            return (
-              <div key={`${group.id}-${season.number}`} className="database-season">
-                <label className="checkbox-inline database-season-title">
-                  <input
-                    type="checkbox"
-                    checked={selectionState(seasonPaths, selectedPaths)}
-                    onChange={(event) => togglePaths(seasonPaths, event.target.checked)}
-                  />
-                  <span>{season.name}</span>
-                  <small>{season.file_count} records</small>
-                </label>
-                <div className="database-file-list">{season.files.map(renderFile)}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderFlatGroup = (group: ProcessedDatabaseGroup) => {
-    const groupPaths = collectGroupPaths(group);
-    return (
-      <div key={group.id} className="database-group">
-        <label className="checkbox-inline database-group-title">
-          <input
-            type="checkbox"
-            checked={selectionState(groupPaths, selectedPaths)}
-            onChange={(event) => togglePaths(groupPaths, event.target.checked)}
-          />
-          <strong>{group.title}</strong>
-          <span>{group.file_count} records</span>
-        </label>
-        <div className="database-file-list">{group.files.map(renderFile)}</div>
-      </div>
-    );
+  const renderBrowser = () => {
+    if (loading) {
+      return <p className="muted">Loading database records...</p>;
+    }
+    if (error) {
+      return <p className="error-text">{error}</p>;
+    }
+    if (!catalog || catalog.total_files === 0) {
+      return <p className="muted">No processed records found.</p>;
+    }
+    if (view.level === "root") {
+      return renderRoot();
+    }
+    if (view.level === "category") {
+      return renderCategory();
+    }
+    if (view.level === "group") {
+      return renderGroup();
+    }
+    return renderSeason();
   };
 
   return (
@@ -275,47 +447,18 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
               </button>
             </div>
 
-            <p className="modal-intro">Select processed database records to remove.</p>
+            <p className="modal-intro">Drill into the database records and select the items to remove.</p>
 
-            <div className="modal-section">
-              <div className="modal-section-header">
-                <h4>Database Records</h4>
-                <button type="button" className="icon-button small" onClick={loadCatalog} disabled={loading || submitting}>
-                  ↻
-                </button>
-              </div>
-              {loading && <p className="muted">Loading database records...</p>}
-              {error && <p className="error-text">{error}</p>}
-              {!loading && !error && catalog && catalog.total_files === 0 && <p className="muted">No processed records found.</p>}
-              {!loading && !error && catalog && catalog.total_files > 0 && (
-                <div className="database-list">
-                  {catalog.tv.length > 0 && (
-                    <section>
-                      <h5>TV Shows</h5>
-                      {catalog.tv.map(renderTvGroup)}
-                    </section>
-                  )}
-                  {catalog.movies.length > 0 && (
-                    <section>
-                      <h5>Movies</h5>
-                      {catalog.movies.map(renderFlatGroup)}
-                    </section>
-                  )}
-                  {catalog.folders.length > 0 && (
-                    <section>
-                      <h5>Other Folders</h5>
-                      {catalog.folders.map(renderFlatGroup)}
-                    </section>
-                  )}
-                </div>
-              )}
+            <div className="modal-section database-browser">
+              {renderHeader()}
+              {renderBrowser()}
             </div>
 
             <form onSubmit={removeSelected} className="restore-form">
               {error && <p className="error-text">{error}</p>}
               <div className="form-actions">
-                <button type="submit" className="button" disabled={selectedPaths.size === 0 || submitting}>
-                  {submitting ? "Removing..." : `Remove Selected (${selectedPaths.size})`}
+                <button type="submit" className="button" disabled={selectedCount === 0 || submitting}>
+                  {submitting ? "Removing..." : `Remove Selected (${selectedCount})`}
                 </button>
                 <button type="button" className="button ghost" onClick={closeModal} disabled={submitting}>
                   Cancel
