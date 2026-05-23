@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [2.2.4] - 2026-05-23
 ### Added
 - Added an authenticated database removal workflow in Library Metrics with a drill-down processed-record browser for removing selected TV shows, seasons, episodes, movies, or folder groups from the state database.
+- Optimized the database removal browser so the initial catalog returns grouped counts only and file records lazy-load as the user drills down.
 
 ## [2.2.3] - 2026-05-17
 ### Added

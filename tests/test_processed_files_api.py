@@ -65,10 +65,34 @@ def test_processed_files_catalog_groups_tv_and_movies(tmp_path, monkeypatch):
     payload = response.json()
     assert payload["total_files"] == 2
     assert payload["tv"][0]["title"] == "Example Show"
+    assert payload["tv"][0]["file_count"] == 1
+    assert payload["tv"][0]["files"] == []
     assert payload["tv"][0]["seasons"][0]["name"] == "Season 01"
-    assert payload["tv"][0]["seasons"][0]["files"][0]["file_path"] == tv_file
+    assert payload["tv"][0]["seasons"][0]["file_count"] == 1
+    assert payload["tv"][0]["seasons"][0]["files"] == []
     assert payload["movies"][0]["title"] == "Example Movie (2024)"
-    assert payload["movies"][0]["files"][0]["file_path"] == movie_file
+    assert payload["movies"][0]["file_count"] == 1
+    assert payload["movies"][0]["files"] == []
+
+    tv_response = client.get(
+        "/processed-files/records",
+        params={
+            "category": "tv",
+            "group_id": payload["tv"][0]["id"],
+            "season_number": 1,
+        },
+        headers=_auth_headers(),
+    )
+    movie_response = client.get(
+        "/processed-files/records",
+        params={"category": "movies", "group_id": payload["movies"][0]["id"]},
+        headers=_auth_headers(),
+    )
+
+    assert tv_response.status_code == 200
+    assert tv_response.json()[0]["file_path"] == tv_file
+    assert movie_response.status_code == 200
+    assert movie_response.json()[0]["file_path"] == movie_file
 
 
 def test_bulk_delete_processed_file_markers_removes_selected_rows(tmp_path, monkeypatch):

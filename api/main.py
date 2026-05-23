@@ -201,6 +201,30 @@ def processed_files_catalog():
     )
 
 
+@app.get("/processed-files/records", response_model=List[schemas.ProcessedDatabaseFile])
+def processed_file_records(
+    category: str = Query(..., pattern="^(tv|movies|folders)$"),
+    group_id: str = Query(..., min_length=1),
+    season_number: int | None = Query(default=None),
+):
+    rows = db.fetch_processed_records(
+        settings.state_db_file,
+        category=category,
+        group_id=group_id,
+        season_number=season_number,
+    )
+    tz = settings.zoneinfo
+    return [
+        schemas.ProcessedDatabaseFile(
+            file_path=row["file_path"],
+            file_name=row["file_name"],
+            processed_at=row["processed_at"],
+            processed_at_iso=schemas.to_iso(row["processed_at"], tz),
+        )
+        for row in rows
+    ]
+
+
 @app.post("/processed-files/delete", response_model=schemas.ProcessedFileBulkDeleteResponse)
 def delete_processed_file_markers(payload: schemas.ProcessedFileDeleteRequest):
     paths = [path for path in payload.file_paths if path]

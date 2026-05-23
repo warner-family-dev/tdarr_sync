@@ -76,13 +76,6 @@ function categoryLabel(category: Category): string {
   }
 }
 
-function collectGroupPaths(group: ProcessedDatabaseGroup): string[] {
-  if (group.seasons.length > 0) {
-    return group.seasons.flatMap((season) => season.files.map((file) => file.file_path));
-  }
-  return group.files.map((file) => file.file_path);
-}
-
 function formatTimestamp(iso: string | null | undefined, formatter: Intl.DateTimeFormat): string {
   if (!iso) {
     return "-";
@@ -104,16 +97,30 @@ function pluralize(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
+function scopeKey(category: Category, groupId: string, seasonNumber?: number): string {
+  return [category, groupId, seasonNumber ?? "all"].join("::");
+}
+
+function recordsUrl(category: Category, groupId: string, seasonNumber?: number): string {
+  const params = new URLSearchParams({ category, group_id: groupId });
+  if (seasonNumber !== undefined) {
+    params.set("season_number", String(seasonNumber));
+  }
+  return `/processed-files/records?${params.toString()}`;
+}
+
 export default function DatabaseRemovalControl({ disabled = false, displayTimezone }: DatabaseRemovalControlProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<ProcessedDatabaseCatalog | null>(null);
   const [view, setView] = useState<ViewState>(ROOT_VIEW);
   const [loading, setLoading] = useState(false);
+  const [loadingScope, setLoadingScope] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [loadedFiles, setLoadedFiles] = useState<Record<string, ProcessedDatabaseFile[]>>({});
 
   const timestampFormatter = useMemo(
     () =>
@@ -135,22 +142,6 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     try {
       const payload = await apiFetchJson<ProcessedDatabaseCatalog>("/processed-files/catalog", { cache: "no-store" });
       setCatalog(payload);
-      setSelectedPaths((prev) => {
-        if (prev.size === 0) {
-          return prev;
-        }
-        const validPaths = new Set<string>();
-        payload.tv.forEach((group) => collectGroupPaths(group).forEach((path) => validPaths.add(path)));
-        payload.movies.forEach((group) => collectGroupPaths(group).forEach((path) => validPaths.add(path)));
-        payload.folders.forEach((group) => collectGroupPaths(group).forEach((path) => validPaths.add(path)));
-        const next = new Set<string>();
-        prev.forEach((path) => {
-          if (validPaths.has(path)) {
-            next.add(path);
-          }
-        });
-        return next;
-      });
     } catch (err) {
       setCatalog(null);
       setError(buildErrorMessage(err));
@@ -158,6 +149,31 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       setLoading(false);
     }
   }, []);
+
+  const fetchScopeFiles = useCallback(
+    async (category: Category, groupId: string, seasonNumber?: number) => {
+      const key = scopeKey(category, groupId, seasonNumber);
+      if (loadedFiles[key]) {
+        return loadedFiles[key];
+      }
+
+      setLoadingScope(key);
+      setError(null);
+      try {
+        const files = await apiFetchJson<ProcessedDatabaseFile[]>(recordsUrl(category, groupId, seasonNumber), {
+          cache: "no-store",
+        });
+        setLoadedFiles((prev) => ({ ...prev, [key]: files }));
+        return files;
+      } catch (err) {
+        setError(buildErrorMessage(err));
+        return [];
+      } finally {
+        setLoadingScope(null);
+      }
+    },
+    [loadedFiles],
+  );
 
   const groupsForCategory = useCallback(
     (category: Category): ProcessedDatabaseGroup[] => {
@@ -227,6 +243,23 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     });
   };
 
+  const toggleScope = async (category: Category, groupId: string, enabled: boolean, seasonNumber?: number) => {
+    const files = await fetchScopeFiles(category, groupId, seasonNumber);
+    togglePaths(files.map((file) => file.file_path), enabled);
+  };
+
+  const openGroup = (category: Category, groupId: string) => {
+    setView({ level: "group", category, groupId });
+    if (category !== "tv") {
+      void fetchScopeFiles(category, groupId);
+    }
+  };
+
+  const openSeason = (groupId: string, seasonNumber: number) => {
+    setView({ level: "season", category: "tv", groupId, seasonNumber });
+    void fetchScopeFiles("tv", groupId, seasonNumber);
+  };
+
   const removeSelected = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const paths = Array.from(selectedPaths).sort();
@@ -249,6 +282,7 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
         body: JSON.stringify({ file_paths: paths }),
       });
       setSelectedPaths(new Set());
+      setLoadedFiles({});
       setFeedback(`Removed ${response.deleted_count} of ${response.requested_count} selected database records.`);
       await loadCatalog();
       setView(ROOT_VIEW);
@@ -324,23 +358,23 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
     return (
       <div className="database-drill-list">
         {groups.map((group) => {
-          const paths = collectGroupPaths(group);
+          const key = scopeKey(view.category, group.id);
+          const loaded = loadedFiles[key] ?? [];
           return (
             <div key={group.id} className="database-select-row">
               <label className="checkbox-inline">
                 <input
                   type="checkbox"
-                  checked={isFullySelected(paths, selectedPaths)}
-                  onChange={(event) => togglePaths(paths, event.target.checked)}
+                  checked={isFullySelected(loaded.map((file) => file.file_path), selectedPaths)}
+                  disabled={loadingScope === key}
+                  onChange={(event) => {
+                    void toggleScope(view.category, group.id, event.target.checked);
+                  }}
                 />
                 <span>{group.title}</span>
-                <small>{pluralize(group.file_count, "record")}</small>
+                <small>{loadingScope === key ? "Loading..." : pluralize(group.file_count, "record")}</small>
               </label>
-              <button
-                type="button"
-                className="button ghost database-open"
-                onClick={() => setView({ level: "group", category: view.category, groupId: group.id })}
-              >
+              <button type="button" className="button ghost database-open" onClick={() => openGroup(view.category, group.id)}>
                 Open
               </button>
             </div>
@@ -359,23 +393,23 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       return (
         <div className="database-drill-list">
           {currentGroup.seasons.map((season) => {
-            const paths = season.files.map((file) => file.file_path);
+            const key = scopeKey("tv", currentGroup.id, season.number);
+            const loaded = loadedFiles[key] ?? [];
             return (
               <div key={`${currentGroup.id}-${season.number}`} className="database-select-row">
                 <label className="checkbox-inline">
                   <input
                     type="checkbox"
-                    checked={isFullySelected(paths, selectedPaths)}
-                    onChange={(event) => togglePaths(paths, event.target.checked)}
+                    checked={isFullySelected(loaded.map((file) => file.file_path), selectedPaths)}
+                    disabled={loadingScope === key}
+                    onChange={(event) => {
+                      void toggleScope("tv", currentGroup.id, event.target.checked, season.number);
+                    }}
                   />
                   <span>{season.name}</span>
-                  <small>{pluralize(season.file_count, "record")}</small>
+                  <small>{loadingScope === key ? "Loading..." : pluralize(season.file_count, "record")}</small>
                 </label>
-                <button
-                  type="button"
-                  className="button ghost database-open"
-                  onClick={() => setView({ level: "season", category: "tv", groupId: currentGroup.id, seasonNumber: season.number })}
-                >
+                <button type="button" className="button ghost database-open" onClick={() => openSeason(currentGroup.id, season.number)}>
                   Open
                 </button>
               </div>
@@ -385,7 +419,12 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       );
     }
 
-    return <div className="database-drill-list">{currentGroup.files.map(renderFileRow)}</div>;
+    const key = scopeKey(view.category, currentGroup.id);
+    const files = loadedFiles[key] ?? [];
+    if (loadingScope === key) {
+      return <p className="muted">Loading database records...</p>;
+    }
+    return <div className="database-drill-list">{files.map(renderFileRow)}</div>;
   };
 
   const renderSeason = () => {
@@ -393,7 +432,12 @@ export default function DatabaseRemovalControl({ disabled = false, displayTimezo
       return null;
     }
 
-    return <div className="database-drill-list">{currentSeason.files.map(renderFileRow)}</div>;
+    const key = scopeKey("tv", view.groupId, view.seasonNumber);
+    const files = loadedFiles[key] ?? [];
+    if (loadingScope === key) {
+      return <p className="muted">Loading database records...</p>;
+    }
+    return <div className="database-drill-list">{files.map(renderFileRow)}</div>;
   };
 
   const renderFileRow = (file: ProcessedDatabaseFile) => (
