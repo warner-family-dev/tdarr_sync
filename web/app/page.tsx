@@ -404,6 +404,11 @@ export default async function DashboardPage() {
                 {status.progress.completed_items}
                 {status.progress.total_items !== null ? ` / ${status.progress.total_items}` : ""} items
               </span>
+              <span>
+                Copied:
+                {" "}
+                {Math.max(0, status.progress.completed_items - status.progress.skipped_items - status.progress.failed_items)}
+              </span>
               <span>Skipped: {status.progress.skipped_items}</span>
               <span>Failed: {status.progress.failed_items}</span>
               <span>ETA: {formatDuration(status.progress.eta_seconds)}</span>
