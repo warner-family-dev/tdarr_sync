@@ -165,6 +165,17 @@ def list_processed_files(limit: int = Query(default=50, le=500, gt=0), offset: i
     return response
 
 
+@app.delete("/processed-files", response_model=schemas.ProcessedFileDeleteResponse)
+def delete_processed_file_marker(file_path: str = Query(..., min_length=1)):
+    deleted_count = db.delete_processed_entries(settings.state_db_file, [file_path])
+    logger.info("Deleted processed marker for %s (deleted=%d)", file_path, deleted_count)
+    return schemas.ProcessedFileDeleteResponse(
+        deleted=deleted_count > 0,
+        deleted_count=deleted_count,
+        file_path=file_path,
+    )
+
+
 @app.get("/metrics/summary", response_model=schemas.ProcessedSummary)
 def metrics_summary():
     summary = db.fetch_summary(settings.state_db_file)

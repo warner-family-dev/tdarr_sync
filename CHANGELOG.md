@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.2.4] - 2026-05-23
+### Added
+- Added an authenticated processed-file marker delete API and Recent Files dashboard action so failed Tdarr conversions can be removed from the state database and picked up again on the next sync.
+
 ## [2.2.3] - 2026-05-17
 ### Added
 - Started v2.2.3 development changelog tracking.
@@ -147,6 +151,7 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
+[2.2.4]: https://github.com/keatre/tdarr_sync/compare/v2.2.3...v2.2.4
 [2.2.3]: https://github.com/keatre/tdarr_sync/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/keatre/tdarr_sync/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...v2.2.1

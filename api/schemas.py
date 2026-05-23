@@ -75,6 +75,13 @@ class ProcessedFile(BaseModel):
     processed_at_iso: Optional[str] = Field(default=None, description="ISO8601 timestamp")
 
 
+
+
+class ProcessedFileDeleteResponse(BaseModel):
+    deleted: bool
+    deleted_count: int
+    file_path: str
+
 class ProcessedSummary(BaseModel):
     total_processed: int
     last_processed_at: Optional[int] = None

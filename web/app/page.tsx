@@ -1,4 +1,5 @@
 import AutoRefresh from "./AutoRefresh";
+import ProcessedFilesTable from "./ProcessedFilesTable";
 import RestoreOriginals from "./RestoreOriginals";
 import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
@@ -416,29 +417,7 @@ export default async function DashboardPage() {
 
       <section className="card">
         <h2>Recent Files</h2>
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Processed At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {files.length === 0 && (
-                <tr>
-                  <td colSpan={2}>No file history yet.</td>
-                </tr>
-              )}
-              {files.map((file) => (
-                <tr key={`${file.file_path}-${file.processed_at}`}>
-                  <td>{file.file_path}</td>
-                  <td>{formatTimestamp(file.processed_at_iso)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ProcessedFilesTable files={files} displayTimezone={DISPLAY_TIMEZONE} />
       </section>
     </div>
   );

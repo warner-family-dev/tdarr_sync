@@ -88,6 +88,12 @@ except Exception:
 
             return decorator
 
+        def delete(self, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
     def _body(*args, **kwargs):
         return kwargs.get("default")
 

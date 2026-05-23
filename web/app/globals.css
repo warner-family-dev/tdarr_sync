@@ -908,3 +908,12 @@ tbody tr:nth-child(even) {
 .restore-launch {
   margin-top: 1rem;
 }
+
+.table-feedback {
+  margin: 0 0 0.75rem;
+}
+
+.table-action {
+  padding: 0.4rem 0.65rem;
+  white-space: nowrap;
+}
