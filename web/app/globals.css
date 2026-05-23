@@ -917,3 +917,118 @@ tbody tr:nth-child(even) {
   padding: 0.4rem 0.65rem;
   white-space: nowrap;
 }
+
+.library-actions,
+.database-removal-control {
+  margin-top: 1rem;
+}
+
+.database-feedback {
+  margin-top: 0.75rem;
+}
+
+.database-modal {
+  max-width: 980px;
+}
+
+.database-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 54vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.database-list section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.database-list h5 {
+  margin: 0;
+  color: #f5f7fb;
+  font-size: 0.9rem;
+}
+
+.database-group,
+.database-season {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid #1f2430;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(12, 16, 24, 0.45);
+}
+
+.database-group-title,
+.database-season-title,
+.database-file-row {
+  width: 100%;
+}
+
+.database-group-title,
+.database-season-title {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.database-group-title strong,
+.database-season-title span,
+.database-file-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.database-group-title span,
+.database-season-title small,
+.database-file-row small {
+  color: #9aa4c1;
+}
+
+.database-sublist,
+.database-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.database-sublist {
+  margin-left: 1.35rem;
+}
+
+.database-file-list {
+  margin-left: 1.35rem;
+}
+
+.database-file-row {
+  align-items: flex-start;
+}
+
+.database-file-row small {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .database-sublist,
+  .database-file-list {
+    margin-left: 0.5rem;
+  }
+
+  .database-file-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .database-file-row input {
+    margin-right: auto;
+  }
+
+  .database-file-row small {
+    margin-left: 1.35rem;
+    white-space: normal;
+  }
+}

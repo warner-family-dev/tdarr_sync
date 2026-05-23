@@ -1,5 +1,5 @@
 import AutoRefresh from "./AutoRefresh";
-import ProcessedFilesTable from "./ProcessedFilesTable";
+import DatabaseRemovalControl from "./DatabaseRemovalControl";
 import RestoreOriginals from "./RestoreOriginals";
 import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
@@ -304,6 +304,9 @@ export default async function DashboardPage() {
               <strong>{formatTimestamp(summary?.database_last_modified_iso)}</strong>
             </span>
           </div>
+          <div className="library-actions">
+            <DatabaseRemovalControl disabled={status?.running ?? false} displayTimezone={DISPLAY_TIMEZONE} />
+          </div>
         </article>
 
         <article className="card">
@@ -417,7 +420,29 @@ export default async function DashboardPage() {
 
       <section className="card">
         <h2>Recent Files</h2>
-        <ProcessedFilesTable files={files} displayTimezone={DISPLAY_TIMEZONE} />
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Processed At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.length === 0 && (
+                <tr>
+                  <td colSpan={2}>No file history yet.</td>
+                </tr>
+              )}
+              {files.map((file) => (
+                <tr key={`${file.file_path}-${file.processed_at}`}>
+                  <td>{file.file_path}</td>
+                  <td>{formatTimestamp(file.processed_at_iso)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

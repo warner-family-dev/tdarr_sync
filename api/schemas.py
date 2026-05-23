@@ -82,6 +82,51 @@ class ProcessedFileDeleteResponse(BaseModel):
     deleted_count: int
     file_path: str
 
+
+class ProcessedFileDeleteRequest(BaseModel):
+    file_paths: List[str] = Field(default_factory=list)
+
+
+class ProcessedFileBulkDeleteResponse(BaseModel):
+    requested_count: int
+    deleted_count: int
+
+
+class ProcessedDatabaseFile(BaseModel):
+    file_path: str
+    file_name: str
+    processed_at: Optional[int] = None
+    processed_at_iso: Optional[str] = None
+
+
+class ProcessedDatabaseSeason(BaseModel):
+    number: int
+    name: str
+    file_count: int
+    last_processed_at: Optional[int] = None
+    last_processed_at_iso: Optional[str] = None
+    files: List[ProcessedDatabaseFile] = Field(default_factory=list)
+
+
+class ProcessedDatabaseGroup(BaseModel):
+    id: str
+    type: Literal["tv", "movie", "folder"]
+    title: str
+    path: str
+    file_count: int
+    last_processed_at: Optional[int] = None
+    last_processed_at_iso: Optional[str] = None
+    seasons: List[ProcessedDatabaseSeason] = Field(default_factory=list)
+    files: List[ProcessedDatabaseFile] = Field(default_factory=list)
+
+
+class ProcessedDatabaseCatalog(BaseModel):
+    total_files: int
+    tv: List[ProcessedDatabaseGroup] = Field(default_factory=list)
+    movies: List[ProcessedDatabaseGroup] = Field(default_factory=list)
+    folders: List[ProcessedDatabaseGroup] = Field(default_factory=list)
+
+
 class ProcessedSummary(BaseModel):
     total_processed: int
     last_processed_at: Optional[int] = None

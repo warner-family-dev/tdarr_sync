@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.2.4] - 2026-05-23
 ### Added
-- Added an authenticated processed-file marker delete API and Recent Files dashboard action so failed Tdarr conversions can be removed from the state database and picked up again on the next sync.
+- Added an authenticated database removal workflow in Library Metrics with a full processed-record browser for removing selected TV shows, seasons, episodes, movies, or folder groups from the state database.
 
 ## [2.2.3] - 2026-05-17
 ### Added

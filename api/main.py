@@ -165,6 +165,53 @@ def list_processed_files(limit: int = Query(default=50, le=500, gt=0), offset: i
     return response
 
 
+@app.get("/processed-files/catalog", response_model=schemas.ProcessedDatabaseCatalog)
+def processed_files_catalog():
+    catalog = db.fetch_processed_catalog(settings.state_db_file)
+    tz = settings.zoneinfo
+
+    def enrich_file(file_item: dict) -> dict:
+        return {
+            **file_item,
+            "processed_at_iso": schemas.to_iso(file_item.get("processed_at"), tz),
+        }
+
+    def enrich_group(group: dict) -> dict:
+        seasons = []
+        for season in group.get("seasons", []):
+            seasons.append(
+                {
+                    **season,
+                    "last_processed_at_iso": schemas.to_iso(season.get("last_processed_at"), tz),
+                    "files": [enrich_file(item) for item in season.get("files", [])],
+                }
+            )
+        return {
+            **group,
+            "last_processed_at_iso": schemas.to_iso(group.get("last_processed_at"), tz),
+            "seasons": seasons,
+            "files": [enrich_file(item) for item in group.get("files", [])],
+        }
+
+    return schemas.ProcessedDatabaseCatalog(
+        total_files=catalog["total_files"],
+        tv=[enrich_group(item) for item in catalog["tv"]],
+        movies=[enrich_group(item) for item in catalog["movies"]],
+        folders=[enrich_group(item) for item in catalog["folders"]],
+    )
+
+
+@app.post("/processed-files/delete", response_model=schemas.ProcessedFileBulkDeleteResponse)
+def delete_processed_file_markers(payload: schemas.ProcessedFileDeleteRequest):
+    paths = [path for path in payload.file_paths if path]
+    if not paths:
+        raise HTTPException(status_code=400, detail="At least one database record must be selected.")
+
+    deleted_count = db.delete_processed_entries(settings.state_db_file, paths)
+    logger.info("Deleted %d processed marker(s) from %d requested path(s).", deleted_count, len(paths))
+    return schemas.ProcessedFileBulkDeleteResponse(requested_count=len(paths), deleted_count=deleted_count)
+
+
 @app.delete("/processed-files", response_model=schemas.ProcessedFileDeleteResponse)
 def delete_processed_file_marker(file_path: str = Query(..., min_length=1)):
     deleted_count = db.delete_processed_entries(settings.state_db_file, [file_path])
