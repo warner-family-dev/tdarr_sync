@@ -172,9 +172,16 @@ class TagFlowRoute(BaseModel):
     input_subdir: Optional[str] = None
 
 
-class RoutingSettings(BaseModel):
+class RoutingSettingsUpdate(BaseModel):
     tdarr_server_url: str = ""
-    tdarr_api_key: str = ""
+    tdarr_api_key: Optional[str] = None
+    show_job_error_count: bool = False
+    routes: List[TagFlowRoute] = Field(default_factory=list)
+
+
+class RoutingSettingsResponse(BaseModel):
+    tdarr_server_url: str = ""
+    configured: bool = False
     show_job_error_count: bool = False
     routes: List[TagFlowRoute] = Field(default_factory=list)
 

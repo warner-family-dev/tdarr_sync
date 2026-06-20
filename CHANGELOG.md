@@ -7,6 +7,21 @@ All notable changes to this project will be documented in this file.
 - Optimized the database removal browser so the initial catalog returns grouped counts only and file records lazy-load as the user drills down.
 - Updated copy progress reporting to show the file currently being copied, include a copied count in the dashboard pane, and report copy throughput in MB/s while large files are transferring.
 
+### Changed
+- Upgraded Next.js and its ESLint configuration to 16.2.9, and upgraded FastAPI, Starlette, and Pydantic to compatible patched releases.
+- Expanded CI to cover development branches, frontend lint/build/audit, Python dependency auditing, Bandit, dependency review, working-tree secret scanning, container scanning, and Dependabot updates.
+- Migrated FastAPI startup logging from deprecated startup events to a lifespan handler.
+
+### Fixed
+- Made the Tdarr API key write-only: routing settings responses now return `configured` instead of the stored credential, and blank updates preserve the existing key.
+- Added routing settings regression tests to ensure API credentials are never returned.
+- Replaced applicable silent or overly broad exception handlers with targeted exception handling and diagnostic logging.
+- Confirmed `.env` remains ignored; credentials exposed in legacy commits still require rotation and a separately authorized coordinated remote history rewrite.
+
+### Security
+- Remediated the audited Next.js and Starlette CVEs and verified that production npm and Python dependency audits report no known vulnerabilities.
+- Added automated working-tree secret scanning and high/critical container vulnerability checks.
+
 ## [2.2.3] - 2026-05-17
 ### Added
 - Started v2.2.3 development changelog tracking.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -10,6 +11,7 @@ from typing import Any, Dict, List
 ALLOWED_SOURCES = {"sonarr", "radarr"}
 DEFAULT_RUNTIME_SETTINGS_FILE = Path("/data/runtime_settings.json")
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+logger = logging.getLogger(__name__)
 
 
 def settings_path_from_env() -> Path:
@@ -104,15 +106,18 @@ def load_runtime_settings(path: Path | None = None) -> Dict[str, Any]:
 
     try:
         raw = json.loads(settings_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        logger.warning("Unable to read runtime settings from %s: %s", settings_path, exc)
         return default_runtime_settings()
 
     if not isinstance(raw, dict):
+        logger.warning("Runtime settings in %s are not a JSON object; using defaults.", settings_path)
         return default_runtime_settings()
 
     try:
         return normalize_runtime_settings_payload(raw)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("Runtime settings in %s are invalid: %s", settings_path, exc)
         return default_runtime_settings()
 
 

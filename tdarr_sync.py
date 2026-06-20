@@ -732,7 +732,7 @@ def _copy_sonarr_items(
             continue
         try:
             planned_dest = destination_root.joinpath(src.resolve().relative_to(BASE_DIR.resolve()))
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
         if not src.exists():
@@ -910,7 +910,7 @@ def _copy_radarr_items(
             continue
         try:
             planned_dest = destination_root.joinpath(src.resolve().relative_to(RADARR_LOCAL_MOUNT_BASE_PATH.resolve()))
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
         if not src.exists():
@@ -1038,7 +1038,7 @@ def move_tdarr_output_back(dry_run=False):
     for out_path in output_files:
         try:
             rel = out_path.relative_to(TDARR_OUTPUT_DIR)
-        except Exception:
+        except ValueError:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
             _progress_advance(action="skipped_outside_output", path=out_path, skipped=True)
             continue

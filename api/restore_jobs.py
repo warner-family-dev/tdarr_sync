@@ -125,10 +125,7 @@ class RestoreJobManager:
             logger.exception("Restore job %s failed with unexpected error.", job.job_id)
         finally:
             job.finished_at = time.time()
-            try:
-                self._restore_service._current_request_id = None  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            self._restore_service._current_request_id = None  # type: ignore[attr-defined]
             self._cleanup_old_jobs()
 
     def _cleanup_old_jobs(self, max_jobs: int = 20):

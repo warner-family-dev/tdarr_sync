@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List
 
@@ -58,7 +59,16 @@ if not logger.handlers:
         logger.addHandler(file_handler)
 
 
-app = FastAPI(title="Tdarr Sync API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logger.info("Tdarr Sync API started")
+    logger.info("Database file: %s", settings.state_db_file)
+    if not settings.state_db_file.exists():
+        logger.warning("State DB not found yet; run will create %s", settings.state_db_file)
+    yield
+
+
+app = FastAPI(title="Tdarr Sync API", version="0.1.0", lifespan=lifespan)
 API_AUTH_TOKEN = settings.require_api_auth_token()
 
 allow_origins = ["*"] if settings.allow_all_cors else settings.cors_allow_origins
@@ -103,14 +113,6 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-@app.on_event("startup")
-def on_startup():
-    logger.info("Tdarr Sync API started")
-    logger.info("Database file: %s", settings.state_db_file)
-    if not settings.state_db_file.exists():
-        logger.warning("State DB not found yet; run will create %s", settings.state_db_file)
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "time": _now_iso()}
@@ -132,21 +134,33 @@ def get_config():
     return data
 
 
-@app.get("/settings/routing", response_model=schemas.RoutingSettings)
+def _routing_settings_response(data: dict) -> schemas.RoutingSettingsResponse:
+    return schemas.RoutingSettingsResponse(
+        tdarr_server_url=str(data.get("tdarr_server_url", "")),
+        configured=bool(str(data.get("tdarr_api_key", "")).strip()),
+        show_job_error_count=bool(data.get("show_job_error_count", False)),
+        routes=data.get("routes", []),
+    )
+
+
+@app.get("/settings/routing", response_model=schemas.RoutingSettingsResponse)
 def get_routing_settings():
     data = load_runtime_settings(settings.runtime_settings_file)
-    return schemas.RoutingSettings(**data)
+    return _routing_settings_response(data)
 
 
-@app.put("/settings/routing", response_model=schemas.RoutingSettings)
-def update_routing_settings(payload: schemas.RoutingSettings):
+@app.put("/settings/routing", response_model=schemas.RoutingSettingsResponse)
+def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
     body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    existing = load_runtime_settings(settings.runtime_settings_file)
+    submitted_api_key = str(body.get("tdarr_api_key") or "").strip()
+    body["tdarr_api_key"] = submitted_api_key or existing.get("tdarr_api_key", "")
     try:
         saved = save_runtime_settings(body, settings.runtime_settings_file)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
-    return schemas.RoutingSettings(**saved)
+    return _routing_settings_response(saved)
 
 
 @app.get("/processed-files", response_model=List[schemas.ProcessedFile])

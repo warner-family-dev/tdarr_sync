@@ -223,7 +223,11 @@ def delete_processed_entries(db_path: Path, file_paths: Iterable[str], chunk_siz
         for chunk in _chunked(paths, chunk_size):
             placeholders = ",".join("?" for _ in chunk)
             try:
-                cursor.execute(f"DELETE FROM processed_files WHERE file_path IN ({placeholders})", chunk)
+                # Placeholder count is generated internally; all file paths remain bound parameters.
+                cursor.execute(
+                    f"DELETE FROM processed_files WHERE file_path IN ({placeholders})",  # nosec B608
+                    chunk,
+                )
             except sqlite3.OperationalError:
                 continue
             if cursor.rowcount and cursor.rowcount > 0:
