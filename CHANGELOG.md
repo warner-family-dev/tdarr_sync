@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Added routing settings regression tests to ensure API credentials are never returned.
 - Replaced applicable silent or overly broad exception handlers with targeted exception handling and diagnostic logging.
 - Confirmed `.env` remains ignored; credentials exposed in legacy commits still require rotation and a separately authorized coordinated remote history rewrite.
+- Changed the web runtime image to Next.js standalone output, removed npm and development dependencies from the final image, upgraded Alpine runtime packages, and replaced a realistic test credential that triggered secret scanning.
 
 ### Security
 - Remediated the audited Next.js and Starlette CVEs and verified that production npm and Python dependency audits report no known vulnerabilities.

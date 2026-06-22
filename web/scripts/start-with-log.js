@@ -42,7 +42,7 @@ function writeLine(line) {
   process.stdout.write(`${line}\n`);
 }
 
-const child = spawn("npm", ["run", "start:raw"], {
+const child = spawn(process.execPath, ["server.js"], {
   env: process.env,
   stdio: ["inherit", "pipe", "pipe"],
 });
