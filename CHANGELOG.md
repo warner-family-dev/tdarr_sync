@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 ### Security
 - Remediated the audited Next.js and Starlette CVEs and verified that production npm and Python dependency audits report no known vulnerabilities.
 - Added automated working-tree secret scanning and high/critical container vulnerability checks.
+- Updated frontend development dependency lockfile entries flagged by the latest npm audit advisories for Babel, brace-expansion, and js-yaml.
+- Hardened Dockerfile security posture by running the web runtime as a non-root user and documenting the Python image root-start/gosu-drop exception required for bind-mount ownership repair.
 
 ## [2.2.3] - 2026-05-17
 ### Added
