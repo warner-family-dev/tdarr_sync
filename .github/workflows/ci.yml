@@ -18,7 +18,7 @@ jobs:
     name: Tests, builds, and dependency audits
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -80,7 +80,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/dependency-review-action@v5.0.0
         with:
           fail-on-severity: high
@@ -96,7 +96,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -111,7 +111,7 @@ jobs:
     name: Container vulnerability scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build API image
         run: docker build -f docker/tdarr.Dockerfile -t tdarr-sync-api:ci .
