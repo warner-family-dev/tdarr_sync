@@ -10,6 +10,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
       SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/data/sync_progress.json}
@@ -32,6 +34,8 @@ services:
       - .env
     environment:
       TZ: ${TZ}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
       SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
@@ -68,6 +72,8 @@ services:
     environment:
       NEXT_BACKEND_ORIGIN: ${NEXT_BACKEND_ORIGIN:-http://api:8000}
       TZ: ${TZ}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
     depends_on:
       api:

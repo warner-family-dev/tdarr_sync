@@ -16,16 +16,19 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN apk upgrade --no-cache && \
-    addgroup -S -g 1001 nodejs && \
-    adduser -S -u 1001 -G nodejs nextjs && \
+    apk add --no-cache su-exec && \
     mkdir -p /logs && \
-    chown -R nextjs:nodejs /app /logs && \
+    chown -R 1000:1000 /app /logs && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
-USER nextjs
+COPY --from=builder --chown=1000:1000 /app/.next/standalone ./
+COPY --from=builder --chown=1000:1000 /app/.next/static ./.next/static
+COPY --from=builder --chown=1000:1000 /app/public ./public
+COPY --from=builder --chown=1000:1000 /app/scripts ./scripts
+COPY docker-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/web-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/web-entrypoint.sh"]
 EXPOSE 3000
 CMD ["node", "scripts/start-with-log.js"]
