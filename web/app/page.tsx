@@ -1,4 +1,5 @@
 import AutoRefresh from "./AutoRefresh";
+import DatabaseRemovalControl from "./DatabaseRemovalControl";
 import RestoreOriginals from "./RestoreOriginals";
 import TriggerSyncControl from "./TriggerSyncControl";
 import { apiFetchJson } from "./apiClient";
@@ -303,6 +304,9 @@ export default async function DashboardPage() {
               <strong>{formatTimestamp(summary?.database_last_modified_iso)}</strong>
             </span>
           </div>
+          <div className="library-actions">
+            <DatabaseRemovalControl disabled={status?.running ?? false} displayTimezone={DISPLAY_TIMEZONE} />
+          </div>
         </article>
 
         <article className="card">
@@ -399,6 +403,11 @@ export default async function DashboardPage() {
               <span>
                 {status.progress.completed_items}
                 {status.progress.total_items !== null ? ` / ${status.progress.total_items}` : ""} items
+              </span>
+              <span>
+                Copied:
+                {" "}
+                {Math.max(0, status.progress.completed_items - status.progress.skipped_items - status.progress.failed_items)}
               </span>
               <span>Skipped: {status.progress.skipped_items}</span>
               <span>Failed: {status.progress.failed_items}</span>

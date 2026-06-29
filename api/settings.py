@@ -1,9 +1,13 @@
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+
+logger = logging.getLogger(__name__)
 
 
 PLACEHOLDER_AUTH_TOKENS = {
@@ -53,8 +57,8 @@ class Settings:
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
             try:
                 self.log_file.touch(exist_ok=True)
-            except PermissionError:
-                pass
+            except OSError as exc:
+                logger.warning("Unable to initialize API log file %s: %s", self.log_file, exc)
         if not self.cors_allow_origins and not self.allow_all_cors:
             # Fall back to localhost if custom list not provided and allow_all_cors is false
             self.cors_allow_origins = ["http://localhost:3000"]

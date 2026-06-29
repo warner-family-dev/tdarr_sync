@@ -26,7 +26,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -118,6 +118,26 @@ def _progress_advance(
             message=message,
             skipped_delta=1 if skipped else 0,
             failed_delta=1 if failed else 0,
+        )
+
+
+def _progress_current(
+    *,
+    action: str,
+    source: Optional[str] = None,
+    title: Optional[str] = None,
+    path: Optional[Path] = None,
+    destination: Optional[Path] = None,
+    message: Optional[str] = None,
+) -> None:
+    if PROGRESS:
+        PROGRESS.action = action
+        PROGRESS.emit(
+            source=source,
+            title=title,
+            path=str(path) if path is not None else None,
+            destination=str(destination) if destination is not None else None,
+            message=message,
         )
 
 # -------------------- Logging --------------------
@@ -313,15 +333,50 @@ def build_relative_path(full_path: Path, base_dir: Path) -> Path:
     except Exception as e:
         report_error_and_exit(f"Failed to relativize '{full_path}' to '{base_dir}'", e)
 
-def safe_copy_to_tdarr(src: Path, dest_root: Path, base_dir: Path, dry_run=False) -> Path:
+def _format_copy_status(copied_bytes: int, total_bytes: int, mb_per_second: Optional[float]) -> str:
+    total_mb = total_bytes / (1024 * 1024) if total_bytes > 0 else 0
+    copied_mb = copied_bytes / (1024 * 1024)
+    if mb_per_second is None:
+        return f"Copying {copied_mb:.1f} / {total_mb:.1f} MB"
+    return f"Copying {copied_mb:.1f} / {total_mb:.1f} MB at {mb_per_second:.1f} MB/s"
+
+
+def safe_copy_to_tdarr(
+    src: Path,
+    dest_root: Path,
+    base_dir: Path,
+    dry_run=False,
+    progress_callback: Optional[Callable[[int, int, float], None]] = None,
+) -> Path:
     rel = build_relative_path(src, base_dir)
     dest = dest_root.joinpath(rel)
     if dry_run:
         logger.info("[COPY DRY] %s -> %s", src, dest)
         return dest
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     logger.info("COPY: %s -> %s", src, dest)
-    shutil.copy2(str(src), str(dest))
+    total_bytes = src.stat().st_size
+    copied_bytes = 0
+    started_at = time.monotonic()
+    last_emit = started_at
+    chunk_size = 8 * 1024 * 1024
+
+    with src.open("rb") as source_handle, dest.open("wb") as dest_handle:
+        while True:
+            chunk = source_handle.read(chunk_size)
+            if not chunk:
+                break
+            dest_handle.write(chunk)
+            copied_bytes += len(chunk)
+            now = time.monotonic()
+            if progress_callback and (now - last_emit >= 1 or copied_bytes >= total_bytes):
+                elapsed = max(now - started_at, 0.001)
+                mb_per_second = (copied_bytes / (1024 * 1024)) / elapsed
+                progress_callback(copied_bytes, total_bytes, mb_per_second)
+                last_emit = now
+
+    shutil.copystat(str(src), str(dest))
     return dest
 
 def init_db():
@@ -677,7 +732,7 @@ def _copy_sonarr_items(
             continue
         try:
             planned_dest = destination_root.joinpath(src.resolve().relative_to(BASE_DIR.resolve()))
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
         if not src.exists():
@@ -706,10 +761,36 @@ def _copy_sonarr_items(
             continue
 
         try:
-            dest = safe_copy_to_tdarr(src=src, dest_root=destination_root, base_dir=BASE_DIR, dry_run=dry_run)
+            total_bytes = src.stat().st_size
+            _progress_current(
+                action="copying",
+                source="sonarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                message=_format_copy_status(0, total_bytes, None),
+            )
+
+            def report_copy_progress(copied_bytes: int, total: int, mb_per_second: float) -> None:
+                _progress_current(
+                    action="copying",
+                    source="sonarr",
+                    title=title,
+                    path=src,
+                    destination=planned_dest,
+                    message=_format_copy_status(copied_bytes, total, mb_per_second),
+                )
+
+            dest = safe_copy_to_tdarr(
+                src=src,
+                dest_root=destination_root,
+                base_dir=BASE_DIR,
+                dry_run=dry_run,
+                progress_callback=report_copy_progress,
+            )
             if not dry_run:
                 mark_processed(conn, src_resolved)
-            _progress_advance(action="copied", source="sonarr", title=title, path=src, destination=dest)
+            _progress_advance(action="copied", source="sonarr", title=title, path=src, destination=dest, message="Copy complete")
         except Exception as exc:
             _progress_advance(
                 action="failed",
@@ -829,7 +910,7 @@ def _copy_radarr_items(
             continue
         try:
             planned_dest = destination_root.joinpath(src.resolve().relative_to(RADARR_LOCAL_MOUNT_BASE_PATH.resolve()))
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
         if not src.exists():
@@ -858,15 +939,36 @@ def _copy_radarr_items(
             continue
 
         try:
+            total_bytes = src.stat().st_size
+            _progress_current(
+                action="copying",
+                source="radarr",
+                title=title,
+                path=src,
+                destination=planned_dest,
+                message=_format_copy_status(0, total_bytes, None),
+            )
+
+            def report_copy_progress(copied_bytes: int, total: int, mb_per_second: float) -> None:
+                _progress_current(
+                    action="copying",
+                    source="radarr",
+                    title=title,
+                    path=src,
+                    destination=planned_dest,
+                    message=_format_copy_status(copied_bytes, total, mb_per_second),
+                )
+
             dest = safe_copy_to_tdarr(
                 src=src,
                 dest_root=destination_root,
                 base_dir=RADARR_LOCAL_MOUNT_BASE_PATH,
                 dry_run=dry_run,
+                progress_callback=report_copy_progress,
             )
             if not dry_run:
                 mark_processed(conn, src_resolved)
-            _progress_advance(action="copied", source="radarr", title=title, path=src, destination=dest)
+            _progress_advance(action="copied", source="radarr", title=title, path=src, destination=dest, message="Copy complete")
         except Exception as exc:
             _progress_advance(
                 action="failed",
@@ -936,7 +1038,7 @@ def move_tdarr_output_back(dry_run=False):
     for out_path in output_files:
         try:
             rel = out_path.relative_to(TDARR_OUTPUT_DIR)
-        except Exception:
+        except ValueError:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
             _progress_advance(action="skipped_outside_output", path=out_path, skipped=True)
             continue

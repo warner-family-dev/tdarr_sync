@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import time
@@ -11,6 +12,7 @@ from typing import Any, Dict, Optional
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 ETA_MIN_COMPLETED = 3
 ETA_MIN_ELAPSED_SECONDS = 10
+logger = logging.getLogger(__name__)
 
 
 def progress_path_from_env(default: str = "/data/sync_progress.json") -> Path:
@@ -129,7 +131,8 @@ def read_progress_file(path: Path, *, max_age_seconds: Optional[int] = None) -> 
         return None
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        logger.warning("Unable to read sync progress from %s: %s", path, exc)
         return None
     if not isinstance(raw, dict):
         return None
@@ -139,7 +142,8 @@ def read_progress_file(path: Path, *, max_age_seconds: Optional[int] = None) -> 
         updated_at = raw.get("updated_at")
         try:
             age = _now() - int(updated_at)
-        except Exception:
+        except (TypeError, ValueError):
+            logger.warning("Sync progress in %s has an invalid updated_at value.", path)
             return None
         if age > max_age_seconds:
             return None

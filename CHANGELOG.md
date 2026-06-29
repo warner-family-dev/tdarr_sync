@@ -1,6 +1,34 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.2.4] - 2026-05-23
+### Added
+- Added an authenticated database removal workflow in Library Metrics with a drill-down processed-record browser for removing selected TV shows, seasons, episodes, movies, or folder groups from the state database.
+- Optimized the database removal browser so the initial catalog returns grouped counts only and file records lazy-load as the user drills down.
+- Updated copy progress reporting to show the file currently being copied, include a copied count in the dashboard pane, and report copy throughput in MB/s while large files are transferring.
+
+### Changed
+- Upgraded Next.js and its ESLint configuration to 16.2.9, and upgraded FastAPI, Starlette, and Pydantic to compatible patched releases.
+- Expanded CI to cover development branches, frontend lint/build/audit, Python dependency auditing, Bandit, dependency review, working-tree secret scanning, container scanning, and Dependabot updates.
+- Updated CI setup actions to current Node 24-backed majors and allow-listed known dependency-review license metadata gaps while keeping vulnerability checks enforced.
+- Changed the CI gitleaks job to scan full git history so historical secret leaks fail future pull requests.
+- Migrated FastAPI startup logging from deprecated startup events to a lifespan handler.
+
+### Fixed
+- Made the Tdarr API key write-only: routing settings responses now return `configured` instead of the stored credential, and blank updates preserve the existing key.
+- Updated the web runtime image to honor `PUID`/`PGID` (default `1000:1000`) like the API/worker image, and wired those values through Compose so bind-mounted logs remain writable by the web process.
+- Added routing settings regression tests to ensure API credentials are never returned.
+- Kept routing settings API-key preservation tests aligned with the sanitized non-secret fixture value after history cleanup.
+- Replaced applicable silent or overly broad exception handlers with targeted exception handling and diagnostic logging.
+- Confirmed `.env` remains ignored; credentials exposed in legacy commits still require rotation and a separately authorized coordinated remote history rewrite.
+- Changed the web runtime image to Next.js standalone output, removed npm and development dependencies from the final image, upgraded Alpine runtime packages, and replaced a realistic test credential that triggered secret scanning.
+
+### Security
+- Remediated the audited Next.js and Starlette CVEs and verified that production npm and Python dependency audits report no known vulnerabilities.
+- Added automated working-tree secret scanning and high/critical container vulnerability checks.
+- Updated frontend development dependency lockfile entries flagged by the latest npm audit advisories for Babel, brace-expansion, and js-yaml.
+- Hardened Dockerfile security posture by running the web runtime as a non-root user and documenting the Python image root-start/gosu-drop exception required for bind-mount ownership repair.
+
 ## [2.2.3] - 2026-05-17
 ### Added
 - Started v2.2.3 development changelog tracking.
@@ -147,6 +175,7 @@ All notable changes to this project will be documented in this file.
 - If you relied on immediate archival, be aware this is now deferred.
 - Existing `.orig` files remain; sweeper only affects items under `MOVE_ORIGINAL_FILES_DEST`.
 
+[2.2.4]: https://github.com/keatre/tdarr_sync/compare/v2.2.3...v2.2.4
 [2.2.3]: https://github.com/keatre/tdarr_sync/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/keatre/tdarr_sync/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/keatre/tdarr_sync/compare/v2.2.0...v2.2.1

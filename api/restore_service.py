@@ -591,7 +591,7 @@ class RestoreService:
         try:
             resolved = candidate if candidate.is_absolute() else self.config.base_dir.joinpath(candidate)
             resolved = resolved.resolve(strict=False)
-        except Exception:
+        except (OSError, RuntimeError):
             return None
         try:
             resolved.relative_to(self._base_dir_resolved)
@@ -606,8 +606,8 @@ class RestoreService:
             if path.is_absolute() and path.parts[: len(base_parts)] == base_parts:
                 relative = path.relative_to(self.config.sonarr_base_path)
                 return self.config.local_mount_base_path.joinpath(relative)
-        except Exception:
-            pass
+        except ValueError:
+            logger.warning("Unable to translate Sonarr path outside configured base: %s", sonarr_path)
         return path
 
     def _select_archive_candidate(self, target_path: Path) -> Optional[Path]:

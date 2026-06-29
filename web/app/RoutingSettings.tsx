@@ -14,9 +14,13 @@ type TagFlowRoute = {
 
 type RoutingSettingsPayload = {
   tdarr_server_url: string;
-  tdarr_api_key: string;
+  configured: boolean;
   show_job_error_count: boolean;
   routes: TagFlowRoute[];
+};
+
+type RoutingSettingsUpdatePayload = Omit<RoutingSettingsPayload, "configured"> & {
+  tdarr_api_key?: string;
 };
 
 const EMPTY_ROUTE: TagFlowRoute = {
@@ -35,10 +39,11 @@ function buildErrorMessage(error: unknown): string {
 export default function RoutingSettings() {
   const [settings, setSettings] = useState<RoutingSettingsPayload>({
     tdarr_server_url: "",
-    tdarr_api_key: "",
+    configured: false,
     show_job_error_count: false,
     routes: [],
   });
+  const [tdarrApiKey, setTdarrApiKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +56,7 @@ export default function RoutingSettings() {
       const payload = await apiFetchJson<RoutingSettingsPayload>("/settings/routing", { cache: "no-store" });
       setSettings({
         tdarr_server_url: payload.tdarr_server_url ?? "",
-        tdarr_api_key: payload.tdarr_api_key ?? "",
+        configured: Boolean(payload.configured),
         show_job_error_count: Boolean(payload.show_job_error_count),
         routes: Array.isArray(payload.routes)
           ? payload.routes.map((route) => ({
@@ -62,6 +67,7 @@ export default function RoutingSettings() {
             }))
           : [],
       });
+      setTdarrApiKey("");
     } catch (err) {
       setError(buildErrorMessage(err));
     } finally {
@@ -129,9 +135,8 @@ export default function RoutingSettings() {
       setError(null);
       setFeedback(null);
       try {
-        const payload: RoutingSettingsPayload = {
+        const payload: RoutingSettingsUpdatePayload = {
           tdarr_server_url: settings.tdarr_server_url.trim(),
-          tdarr_api_key: settings.tdarr_api_key.trim(),
           show_job_error_count: settings.show_job_error_count,
           routes: settings.routes.map((route) => ({
             source: route.source,
@@ -140,6 +145,9 @@ export default function RoutingSettings() {
             input_subdir: route.input_subdir.trim(),
           })),
         };
+        if (tdarrApiKey.trim()) {
+          payload.tdarr_api_key = tdarrApiKey.trim();
+        }
         const saved = await apiFetchJson<RoutingSettingsPayload>("/settings/routing", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -147,10 +155,11 @@ export default function RoutingSettings() {
         });
         setSettings({
           tdarr_server_url: saved.tdarr_server_url ?? "",
-          tdarr_api_key: saved.tdarr_api_key ?? "",
+          configured: Boolean(saved.configured),
           show_job_error_count: Boolean(saved.show_job_error_count),
           routes: saved.routes ?? [],
         });
+        setTdarrApiKey("");
         setFeedback("Routing settings saved.");
       } catch (err) {
         setError(buildErrorMessage(err));
@@ -158,7 +167,7 @@ export default function RoutingSettings() {
         setSaving(false);
       }
     },
-    [canSave, settings],
+    [canSave, settings, tdarrApiKey],
   );
 
   if (loading) {
@@ -181,9 +190,9 @@ export default function RoutingSettings() {
           <span>Tdarr API key</span>
           <input
             type="password"
-            placeholder="tapi_..."
-            value={settings.tdarr_api_key}
-            onChange={(event) => setSettings((prev) => ({ ...prev, tdarr_api_key: event.target.value }))}
+            placeholder={settings.configured ? "Configured — enter a new key to replace" : "tapi_..."}
+            value={tdarrApiKey}
+            onChange={(event) => setTdarrApiKey(event.target.value)}
           />
         </label>
       </div>

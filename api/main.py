@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List
 
@@ -58,7 +59,16 @@ if not logger.handlers:
         logger.addHandler(file_handler)
 
 
-app = FastAPI(title="Tdarr Sync API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logger.info("Tdarr Sync API started")
+    logger.info("Database file: %s", settings.state_db_file)
+    if not settings.state_db_file.exists():
+        logger.warning("State DB not found yet; run will create %s", settings.state_db_file)
+    yield
+
+
+app = FastAPI(title="Tdarr Sync API", version="0.1.0", lifespan=lifespan)
 API_AUTH_TOKEN = settings.require_api_auth_token()
 
 allow_origins = ["*"] if settings.allow_all_cors else settings.cors_allow_origins
@@ -103,14 +113,6 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-@app.on_event("startup")
-def on_startup():
-    logger.info("Tdarr Sync API started")
-    logger.info("Database file: %s", settings.state_db_file)
-    if not settings.state_db_file.exists():
-        logger.warning("State DB not found yet; run will create %s", settings.state_db_file)
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "time": _now_iso()}
@@ -132,21 +134,33 @@ def get_config():
     return data
 
 
-@app.get("/settings/routing", response_model=schemas.RoutingSettings)
+def _routing_settings_response(data: dict) -> schemas.RoutingSettingsResponse:
+    return schemas.RoutingSettingsResponse(
+        tdarr_server_url=str(data.get("tdarr_server_url", "")),
+        configured=bool(str(data.get("tdarr_api_key", "")).strip()),
+        show_job_error_count=bool(data.get("show_job_error_count", False)),
+        routes=data.get("routes", []),
+    )
+
+
+@app.get("/settings/routing", response_model=schemas.RoutingSettingsResponse)
 def get_routing_settings():
     data = load_runtime_settings(settings.runtime_settings_file)
-    return schemas.RoutingSettings(**data)
+    return _routing_settings_response(data)
 
 
-@app.put("/settings/routing", response_model=schemas.RoutingSettings)
-def update_routing_settings(payload: schemas.RoutingSettings):
+@app.put("/settings/routing", response_model=schemas.RoutingSettingsResponse)
+def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
     body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    existing = load_runtime_settings(settings.runtime_settings_file)
+    submitted_api_key = str(body.get("tdarr_api_key") or "").strip()
+    body["tdarr_api_key"] = submitted_api_key or existing.get("tdarr_api_key", "")
     try:
         saved = save_runtime_settings(body, settings.runtime_settings_file)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
-    return schemas.RoutingSettings(**saved)
+    return _routing_settings_response(saved)
 
 
 @app.get("/processed-files", response_model=List[schemas.ProcessedFile])
@@ -163,6 +177,88 @@ def list_processed_files(limit: int = Query(default=50, le=500, gt=0), offset: i
             )
         )
     return response
+
+
+@app.get("/processed-files/catalog", response_model=schemas.ProcessedDatabaseCatalog)
+def processed_files_catalog():
+    catalog = db.fetch_processed_catalog(settings.state_db_file)
+    tz = settings.zoneinfo
+
+    def enrich_file(file_item: dict) -> dict:
+        return {
+            **file_item,
+            "processed_at_iso": schemas.to_iso(file_item.get("processed_at"), tz),
+        }
+
+    def enrich_group(group: dict) -> dict:
+        seasons = []
+        for season in group.get("seasons", []):
+            seasons.append(
+                {
+                    **season,
+                    "last_processed_at_iso": schemas.to_iso(season.get("last_processed_at"), tz),
+                    "files": [enrich_file(item) for item in season.get("files", [])],
+                }
+            )
+        return {
+            **group,
+            "last_processed_at_iso": schemas.to_iso(group.get("last_processed_at"), tz),
+            "seasons": seasons,
+            "files": [enrich_file(item) for item in group.get("files", [])],
+        }
+
+    return schemas.ProcessedDatabaseCatalog(
+        total_files=catalog["total_files"],
+        tv=[enrich_group(item) for item in catalog["tv"]],
+        movies=[enrich_group(item) for item in catalog["movies"]],
+        folders=[enrich_group(item) for item in catalog["folders"]],
+    )
+
+
+@app.get("/processed-files/records", response_model=List[schemas.ProcessedDatabaseFile])
+def processed_file_records(
+    category: str = Query(..., pattern="^(tv|movies|folders)$"),
+    group_id: str = Query(..., min_length=1),
+    season_number: int | None = Query(default=None),
+):
+    rows = db.fetch_processed_records(
+        settings.state_db_file,
+        category=category,
+        group_id=group_id,
+        season_number=season_number,
+    )
+    tz = settings.zoneinfo
+    return [
+        schemas.ProcessedDatabaseFile(
+            file_path=row["file_path"],
+            file_name=row["file_name"],
+            processed_at=row["processed_at"],
+            processed_at_iso=schemas.to_iso(row["processed_at"], tz),
+        )
+        for row in rows
+    ]
+
+
+@app.post("/processed-files/delete", response_model=schemas.ProcessedFileBulkDeleteResponse)
+def delete_processed_file_markers(payload: schemas.ProcessedFileDeleteRequest):
+    paths = [path for path in payload.file_paths if path]
+    if not paths:
+        raise HTTPException(status_code=400, detail="At least one database record must be selected.")
+
+    deleted_count = db.delete_processed_entries(settings.state_db_file, paths)
+    logger.info("Deleted %d processed marker(s) from %d requested path(s).", deleted_count, len(paths))
+    return schemas.ProcessedFileBulkDeleteResponse(requested_count=len(paths), deleted_count=deleted_count)
+
+
+@app.delete("/processed-files", response_model=schemas.ProcessedFileDeleteResponse)
+def delete_processed_file_marker(file_path: str = Query(..., min_length=1)):
+    deleted_count = db.delete_processed_entries(settings.state_db_file, [file_path])
+    logger.info("Deleted processed marker for %s (deleted=%d)", file_path, deleted_count)
+    return schemas.ProcessedFileDeleteResponse(
+        deleted=deleted_count > 0,
+        deleted_count=deleted_count,
+        file_path=file_path,
+    )
 
 
 @app.get("/metrics/summary", response_model=schemas.ProcessedSummary)
