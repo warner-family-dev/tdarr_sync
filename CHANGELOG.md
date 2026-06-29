@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Made the Tdarr API key write-only: routing settings responses now return `configured` instead of the stored credential, and blank updates preserve the existing key.
 - Updated the web runtime image to honor `PUID`/`PGID` (default `1000:1000`) like the API/worker image, and wired those values through Compose so bind-mounted logs remain writable by the web process.
 - Added routing settings regression tests to ensure API credentials are never returned.
+- Kept routing settings API-key preservation tests aligned with the sanitized non-secret fixture value after history cleanup.
 - Replaced applicable silent or overly broad exception handlers with targeted exception handling and diagnostic logging.
 - Confirmed `.env` remains ignored; credentials exposed in legacy commits still require rotation and a separately authorized coordinated remote history rewrite.
 - Changed the web runtime image to Next.js standalone output, removed npm and development dependencies from the final image, upgraded Alpine runtime packages, and replaced a realistic test credential that triggered secret scanning.

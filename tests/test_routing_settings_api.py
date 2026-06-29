@@ -55,5 +55,5 @@ def test_blank_routing_api_key_preserves_existing_secret(tmp_path, monkeypatch):
     assert response.json()["configured"] is True
     assert "tdarr_api_key" not in response.json()
     stored = load_runtime_settings(settings_file)
-    assert stored["tdarr_api_key"] == "tapi_existing"
+    assert stored["tdarr_api_key"] == "not-a-secret-test-value"
     assert stored["tdarr_server_url"] == "http://tdarr-new.local:8266"
