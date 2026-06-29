@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Upgraded Next.js and its ESLint configuration to 16.2.9, and upgraded FastAPI, Starlette, and Pydantic to compatible patched releases.
 - Expanded CI to cover development branches, frontend lint/build/audit, Python dependency auditing, Bandit, dependency review, working-tree secret scanning, container scanning, and Dependabot updates.
 - Updated CI setup actions to current Node 24-backed majors and allow-listed known dependency-review license metadata gaps while keeping vulnerability checks enforced.
+- Changed the CI gitleaks job to scan full git history so historical secret leaks fail future pull requests.
 - Migrated FastAPI startup logging from deprecated startup events to a lifespan handler.
 
 ### Fixed
