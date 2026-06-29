@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-06-29
+### Changed
+- Grouped related Dependabot updates for Python API packages, React peer packages, Next.js tooling, and frontend TypeScript tooling to reduce broken split dependency PRs.
+- Configured Dependabot to ignore unsupported major updates for ESLint and the web Node base image until the surrounding toolchain supports them.
+
 ## [2.2.4] - 2026-05-23
 ### Added
 - Added an authenticated database removal workflow in Library Metrics with a drill-down processed-record browser for removing selected TV shows, seasons, episodes, movies, or folder groups from the state database.
