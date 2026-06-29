@@ -5,12 +5,38 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      fastapi-stack:
+        patterns:
+          - "fastapi"
+          - "starlette"
+          - "pydantic"
+          - "uvicorn"
 
   - package-ecosystem: npm
     directory: "/web"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      react-stack:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      next-stack:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+      frontend-tooling:
+        patterns:
+          - "typescript"
+          - "@types/node"
+    ignore:
+      - dependency-name: "eslint"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -29,3 +55,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
