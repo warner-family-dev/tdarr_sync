@@ -2,42 +2,67 @@ name-template: "v$RESOLVED_VERSION"
 tag-template: "v$RESOLVED_VERSION"
 categories:
   - title: "Added"
-    labels:
-      - "feat"
-      - "feature"
-      - "enhancement"
+    semver-increment: minor
+    when:
+      labels:
+        - "enhancement"
   - title: "Changed"
-    labels:
-      - "chore"
-      - "refactor"
-      - "docs"
+    semver-increment: patch
+    when:
+      labels:
+        - "documentation"
+        - "dependencies"
+        - "refactor"
+        - "chore"
   - title: "Fixed"
-    labels:
-      - "fix"
-      - "bug"
+    semver-increment: patch
+    when:
+      labels:
+        - "bug"
+        - "fix"
   - title: "Removed"
-    labels:
-      - "remove"
-      - "breaking"
+    semver-increment: major
+    when:
+      labels:
+        - "remove"
+        - "breaking"
+  - title: "Other Changes"
+    semver-increment: patch
 change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
 change-title-escapes: "\\<*_&"
-version-resolver:
-  major:
-    labels:
-      - "breaking"
-  minor:
-    labels:
-      - "feat"
-      - "feature"
-      - "enhancement"
-  patch:
-    labels:
-      - "fix"
-      - "bug"
-      - "docs"
-      - "chore"
-      - "refactor"
-  default: patch
 template: |
   ## Changes
   $CHANGES
+autolabeler:
+  - label: "documentation"
+    title:
+      - '/^docs?:/i'
+      - '/^docu:/i'
+    files:
+      - "*.md"
+      - "**/*.md"
+  - label: "bug"
+    title:
+      - '/^(fix|bug):/i'
+      - '/bugfix/i'
+    branch:
+      - '/fix\/.+/'
+      - '/bug\/.+/'
+  - label: "enhancement"
+    title:
+      - '/^(feat|feature):/i'
+    branch:
+      - '/feature\/.+/'
+      - '/feat\/.+/'
+  - label: "dependencies"
+    title:
+      - '/^chore\(deps/i'
+      - '/^chore\(deps-dev/i'
+    branch:
+      - '/^dependabot\/.+/'
+    files:
+      - "requirements/**"
+      - "web/package.json"
+      - "web/package-lock.json"
+      - "docker/**"
+      - ".github/dependabot.yml"

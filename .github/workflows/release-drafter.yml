@@ -2,7 +2,7 @@ name: Release Drafter
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, edited]
   push:
     branches:
       - main
@@ -11,13 +11,28 @@ permissions:
   contents: read
 
 jobs:
-  update_release_draft:
+  auto_label:
+    name: Auto label pull request
+    if: github.event_name == 'pull_request'
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      - name: Auto label pull request
+        uses: release-drafter/release-drafter/autolabeler@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update_release_draft:
+    name: Update release draft
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
       - name: Update release draft
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
