@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.2] - 2026-07-01
+### Changed
+- Split Dependency Review into a pull-request-only workflow so push CI runs no longer show skipped dependency-review jobs.
+- Reworked README deployment guidance into a clearer implementation checklist covering host mounts, path mappings, dashboard routes, Tdarr watch folders, restore behavior, and current source support.
+
 ## [2.3.0] - 2026-06-29
 ### Changed
 - Grouped related Dependabot updates for Python API packages, React peer packages, Next.js tooling, and frontend TypeScript tooling to reduce broken split dependency PRs.
