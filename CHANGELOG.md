@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.3] - 2026-07-01
+### Changed
+- Updated the release branch helper to create only the next development branch and leave version tag creation to publishing the GitHub release draft.
+- Added Release Drafter fallback categorization and PR autolabeling so unlabeled merged PRs remain visible in draft release notes.
+
 ## [2.3.2] - 2026-07-01
 ### Changed
 - Split Dependency Review into a pull-request-only workflow so push CI runs no longer show skipped dependency-review jobs.
