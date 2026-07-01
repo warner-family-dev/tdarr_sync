@@ -1,150 +1,308 @@
-# Tdarr Sync (Sonarr/Radarr ➜ Tdarr ➜ Library)
+# Tdarr Sync
 
-Sync media from Sonarr and Radarr libraries to Tdarr for transcoding, then restore the transcoded files back to their original locations — safely.  
-The project now ships as a dockerised stack with a REST API and dashboard so you can deploy, monitor, and trigger runs without SSHing into the host.
+Tdarr Sync moves tagged media from Sonarr and Radarr into Tdarr, then restores Tdarr's completed output back to the original library path.
 
-> Repo: <https://github.com/warner-family-dev/tdarr_sync>
+The current implementation supports Sonarr and Radarr as sources. The routing model is source-based, so more *arr-style sources can be added later by extending the source adapter code, route schema, and path mapping logic.
 
----
+## What It Does
 
-## Highlights
+1. Reads Sonarr and Radarr items from their APIs.
+2. Finds items with configured tags.
+3. Copies matching files into a Tdarr input folder without changing the originals.
+4. Tracks copied files in SQLite so the same file is not queued repeatedly.
+5. Watches the Tdarr output folder.
+6. Restores completed files back to the matching Sonarr or Radarr library path.
+7. Archives the replaced original file, then optionally deletes old archived originals after the retention window.
 
-- **Copy phase:** Files from Sonarr series and Radarr movies are copied by route rules (`source + tag -> flow`) into Tdarr input subfolders. Originals are untouched.
-- **Restore phase:** When Tdarr outputs a transcoded file into `TDARR_OUTPUT_DIR`, Tdarr Sync moves it back into `BASE_DIR`, archiving any original with the configured suffix/location first.
-- **Retention-aware archives:** Archived originals are “touched” to now so retention windows respect when they were replaced, not the media’s production date.
-- **Container-first:** `docker-compose.yml` starts the API and dashboard, plus an optional manual runner profile for cron-driven syncs.
-- **Observability:** REST endpoints expose sync state and processed history; the Next.js dashboard surfaces metrics, recent activity, and a one-click manual trigger.
-- **UI settings:** Configure Tdarr server URL, Tdarr API key, and route mappings from the dashboard (persisted in `/data/runtime_settings.json`).
-- **Notification hooks:** Optional Telegram alerts for failures, plus rotating log files kept under `/logs`.
+The normal deployment is Docker Compose with three services:
 
----
+| Service | Purpose |
+| --- | --- |
+| `api` | FastAPI service for dashboard data, settings, manual sync triggers, restore jobs, and database cleanup. |
+| `web` | Next.js dashboard. |
+| `worker` | One-shot sync runner used manually or by cron through the `manual` Compose profile. |
 
-## Architecture Overview
+## Implementation Checklist
 
-| Service | Image | Port | Responsibility |
-| --- | --- | --- | --- |
-| `worker` (manual profile) | `docker/tdarr.Dockerfile` | – | Runs `tdarr_sync.py` once when invoked (cron or ad-hoc) and writes logs/DB state. |
-| `api` | `docker/tdarr.Dockerfile` | `API_PORT` (default `8000`) | FastAPI layer for health, metrics, history, and manual sync triggers. Shares the same code/data/log mounts and media volumes as the runner so manual runs can access the library. |
-| `web` | `web/Dockerfile` | `WEB_PORT` (default `3000`) | Next.js dashboard that talks to the API. |
+Use this sequence for a new install.
 
-Shared volumes:
+### 1. Prepare Host Folders
 
-- `${TDARR_SYNC_DATA_DIR}` → mounted at `/data` (stores `sonarr_tdarr_state.db`)
-- `${TDARR_SYNC_LOG_DIR}` → mounted at `/logs` (rotating logs for API/runner)
-- Media mounts provided via `SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`, `HOST_TDARR_INPUT`, `HOST_TDARR_OUTPUT`, and optional `HOST_ARCHIVE_DIR`
+Create host folders for:
 
----
+| Host folder | Used for |
+| --- | --- |
+| Sonarr library | Source TV files. |
+| Radarr library | Source movie files. |
+| Tdarr input | Files copied by Tdarr Sync and watched by Tdarr. |
+| Tdarr output | Completed files written by Tdarr. |
+| Archive | Originals moved aside before replacement. |
+| Data | SQLite DB, runtime routing settings, and sync progress JSON. |
+| Logs | Shared service log. |
 
-## Quick Start (Docker Compose)
+The containers default to `PUID=1000` and `PGID=1000`. Make the data, log, Tdarr input, Tdarr output, archive, and media folders writable by that user/group or update `PUID`/`PGID` in `.env`.
 
-1. Copy the sample environment file and adjust it for your host paths and timezone:
-   ```bash
-   cp .env.example .env
-   ```
-2. Edit `.env`:
-   - Set `TZ` to your preferred timezone (e.g. `America/Chicago`).
-   - Point `SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`, `HOST_TDARR_INPUT`, `HOST_TDARR_OUTPUT`, and `HOST_ARCHIVE_DIR` at real host directories.
-   - Fill in Sonarr/Radarr credentials (`SONARR_URL`, `SONARR_API_KEY`, `RADARR_URL`, `RADARR_API_KEY`).
-   - If you mount an archive folder, ensure it exists and is writable.
-   - Create the `TDARR_SYNC_DATA_DIR` and `TDARR_SYNC_LOG_DIR` directories on the host and make sure they’re owned by the user `PUID`/`PGID` (defaults to `1000:1000`).
-3. Bring the stack up:
-   ```bash
-   docker compose up -d --build
-   ```
-4. Visit the dashboard at `http://localhost:${WEB_PORT}` (defaults to `3000`).  
-   Health is available at `http://localhost:${API_PORT}/health` (defaults to `8000`). Other API endpoints require `Authorization: Bearer $API_AUTH_TOKEN`.
-5. Check logs when needed:
-   ```bash
-   docker compose logs -f api
-   ```
-6. In the top-right header control (`branch (commit-date) | Settings`), open **Settings** and define your tag-to-flow routes (for both Sonarr and Radarr). Tdarr server URL/IP and API key are managed there.
-7. Starting with `v2.2.0`, Tdarr API-key auth must be enabled in Tdarr before routing features work. Tdarr ships with API keys disabled by default, so enable it in Tdarr first, then paste the key into **Settings**.
+### 2. Configure `.env`
 
-Sync does not auto-run. Use the dashboard’s “Trigger Sync” button for an on-demand run — enable **Select** to choose specific series/seasons — or hit `POST /sync/run` directly with the configured bearer token.
-
-### Scheduling with cron (Docker)
-
-Use the manual runner profile so cron can launch a one-off sync container on your schedule.
+Copy the sample file:
 
 ```bash
-# Every 30 minutes
+cp .env.example .env
+```
+
+Set these first:
+
+```env
+TZ=America/Chicago
+PUID=1000
+PGID=1000
+API_AUTH_TOKEN=replace-with-a-long-random-token
+```
+
+Set host mounts:
+
+```env
+SONARR_LIBRARY_MOUNT=/mnt/media/tv
+RADARR_LIBRARY_MOUNT=/mnt/media/movies
+HOST_TDARR_INPUT=/mnt/tdarr/input
+HOST_TDARR_OUTPUT=/mnt/tdarr/output
+HOST_ARCHIVE_DIR=/mnt/tdarr/archive
+TDARR_SYNC_DATA_DIR=./data
+TDARR_SYNC_LOG_DIR=./logs
+```
+
+Set the in-container paths. These defaults match `docker-compose.yml`:
+
+```env
+BASE_DIR=/media/library
+RADARR_LOCAL_MOUNT_BASE_PATH=/media/radarr_library
+TDARR_INPUT_DIR=/media/tdarr/input
+TDARR_OUTPUT_DIR=/media/tdarr/output
+MOVE_ORIGINAL_FILES_DEST=/media/archive
+```
+
+Set the source API credentials:
+
+```env
+SONARR_URL=http://sonarr:8989
+SONARR_API_KEY=replace-me
+RADARR_URL=http://radarr:7878
+RADARR_API_KEY=replace-me
+```
+
+Set source path mappings. These map the paths returned by Sonarr/Radarr to the paths visible inside the Tdarr Sync containers:
+
+```env
+SONARR_BASE_PATH=/mnt/media/tv
+LOCAL_MOUNT_BASE_PATH=/media/library
+RADARR_BASE_PATH=/mnt/media/movies
+RADARR_LOCAL_MOUNT_BASE_PATH=/media/radarr_library
+```
+
+If Sonarr reports files under `/tv` but the container sees the same files under `/media/library`, set `SONARR_BASE_PATH=/tv` and `LOCAL_MOUNT_BASE_PATH=/media/library`. Radarr works the same way with `RADARR_BASE_PATH` and `RADARR_LOCAL_MOUNT_BASE_PATH`.
+
+### 3. Start the Stack
+
+```bash
+docker compose up -d --build
+```
+
+Open the dashboard:
+
+```text
+http://localhost:3000
+```
+
+The API health endpoint is public:
+
+```text
+http://localhost:8000/health
+```
+
+All other API endpoints require:
+
+```text
+Authorization: Bearer <API_AUTH_TOKEN>
+```
+
+### 4. Enable Tdarr API Access
+
+Tdarr Sync needs Tdarr API access for queue and worker status in the dashboard.
+
+In Tdarr, enable API key authentication, copy the API key, then enter it in the Tdarr Sync dashboard settings.
+
+### 5. Configure Routing In The Dashboard
+
+Open **Settings** in the Tdarr Sync dashboard and configure:
+
+| Field | Meaning |
+| --- | --- |
+| Tdarr server URL | URL the API container can use to reach Tdarr. |
+| Tdarr API key | Stored server-side only; it is not returned to the browser after save. |
+| Source | `sonarr` or `radarr`. |
+| Tag | The Sonarr/Radarr tag that selects files for this route. |
+| Flow name | Human-readable flow label. Used to derive the input subfolder when `Input subdir` is blank. |
+| Input subdir | Single safe folder name under `TDARR_INPUT_DIR`. |
+
+Route order matters. The first matching tag for a source wins.
+
+Current sources are `sonarr` and `radarr`. To support another source, the application would need a new source adapter, route source validation, copy logic, restore path resolution, and dashboard/API schema updates.
+
+The tag `remux` is temporarily blocked by the sync pipeline. Any route using that tag is ignored for copy and restore handling until that block is removed.
+
+### 6. Configure Tdarr Watch Folders
+
+Tdarr Sync copies files into this structure:
+
+```text
+<TDARR_INPUT_DIR>/<input_subdir>/__sonarr_input__/<relative-library-path>
+<TDARR_INPUT_DIR>/<input_subdir>/__radarr_input__/<relative-library-path>
+```
+
+Example:
+
+```text
+/media/tdarr/input/hevc-main/__sonarr_input__/Show/Season 01/Episode.mkv
+/media/tdarr/input/movie-hevc/__radarr_input__/Movie (2024)/Movie.mkv
+```
+
+Configure Tdarr so the matching input folders are watched and completed files are written to `TDARR_OUTPUT_DIR` with the same relative path structure. Restore depends on that relative path to decide whether the output belongs back in the Sonarr or Radarr library.
+
+### 7. Run A Dry Run
+
+From the dashboard, trigger a sync with dry run enabled first. Or use the API:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $API_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}' \
+  http://127.0.0.1:8000/sync/run
+```
+
+Review logs:
+
+```bash
+docker compose logs -f api web
+```
+
+Shared log file:
+
+```text
+${TDARR_SYNC_LOG_DIR}/tdarr_sync.log
+```
+
+### 8. Run And Schedule Syncs
+
+Manual run from the dashboard:
+
+- Use **Trigger Sync** for all configured routes.
+- Enable **Select** to choose specific Sonarr series/seasons.
+- Radarr currently runs by route/tag, not by dashboard selection.
+
+Cron example for regular one-shot syncs:
+
+```cron
 */30 * * * * cd /path/to/tdarr_sync && docker compose --profile manual run --rm worker
 ```
 
----
+## Runtime Behavior
 
-## Configuration
+### Copy Phase
 
-Everything runs from `.env` — the file is not checked into Git (see `.env.example` for defaults).
+- Loads UI routes from `/data/runtime_settings.json`.
+- Falls back to `SONARR_TAG_NAME` and `RADARR_TAG_NAME` only when no UI routes exist.
+- Reads Sonarr/Radarr items and tags through their APIs.
+- Copies matching files into Tdarr input subfolders.
+- Leaves source files untouched during copy.
+- Stores copied file paths in SQLite to prevent duplicate queueing.
 
-### Host mounts
+### Restore Phase
 
-| Variable | Description |
-| --- | --- |
-| `SONARR_LIBRARY_MOUNT` | Writable mount for Sonarr library media. Mounted in containers at `/media/library`. |
-| `RADARR_LIBRARY_MOUNT` | Writable mount for Radarr library media. Mounted in containers at `/media/radarr_library`. |
-| `HOST_LIBRARY_MOUNT` | Backward-compatible fallback if `SONARR_LIBRARY_MOUNT` is unset. |
-| `HOST_TDARR_INPUT` | Writable mount where Tdarr watches for incoming jobs. |
-| `HOST_TDARR_OUTPUT` | Writable mount where Tdarr drops transcoded outputs. |
-| `HOST_ARCHIVE_DIR` | (Optional) Writable mount used when `MOVE_ORIGINAL_FILES=true`. |
-| `TDARR_SYNC_DATA_DIR` | Where the SQLite DB is stored on the host (defaults to `./data`). |
-| `TDARR_SYNC_LOG_DIR` | Where logs are stored on the host (defaults to `./logs`). |
+- Scans `TDARR_OUTPUT_DIR`.
+- Resolves each output path back to Sonarr or Radarr using the route input folder and source prefix.
+- Archives the current library file using `BACKUP_SUFFIX`.
+- Moves the completed Tdarr output into the original library path.
+- Removes processed DB markers only after successful restore operations that require cleanup.
 
-### Core service variables
+### Archive Retention
 
-- `TZ` — propagated to all containers; controls timestamps and log formatting.
-- `STATE_DB_FILE` — path inside the containers for the SQLite DB (default `/data/sonarr_tdarr_state.db`).
-- `RUNTIME_SETTINGS_FILE` — JSON file persisted in `/data` which stores UI-managed routing settings (Tdarr server/IP, API key, tag/flow routes).
-- `SYNC_PROGRESS_FILE` — JSON progress snapshot written by active sync runs and read by the API/dashboard (default `/data/sync_progress.json`).
-- `LOG_FILE` — path to the shared log (defaults to `/logs/tdarr_sync.log`).
-- `API_AUTH_TOKEN` — required shared bearer token for every API endpoint except `/health`; use a long random value.
-- `API_CORS_ALLOW_ALL` — defaults to `false`; keep disabled unless you understand the exposure.
-- `API_CORS_ALLOW_ORIGINS` — comma-separated browser origins allowed to call the API directly; defaults to `http://localhost:3000`.
-- `NEXT_BACKEND_ORIGIN` — (optional) explicit URL the server-side web proxy should forward to; defaults to the in-cluster `http://api:8000`.
-- `APP_GIT_VERSION`, `APP_GIT_COMMIT_DATE`, `APP_GIT_COMMIT_SHA` — optional metadata shown in the top-right header label. If unset, the API attempts to read git info directly (including a `.git` metadata fallback in Docker builds).
-- Sonarr/Radarr paths mirror the script environment (`BASE_DIR`, `TDARR_INPUT_DIR`, `TDARR_OUTPUT_DIR`, `SONARR_BASE_PATH`, `LOCAL_MOUNT_BASE_PATH`, `RADARR_BASE_PATH`, `RADARR_LOCAL_MOUNT_BASE_PATH`, etc.).
+When `MOVE_ORIGINAL_FILES=true`, replaced originals are moved under `MOVE_ORIGINAL_FILES_DEST` while preserving their relative path. Their modified time is touched to now so retention is based on replacement time.
 
-### Manual sync controls
+When `DELETE_ORIGINAL_FILES=true`, archived originals ending in `BACKUP_SUFFIX` are deleted after `DELETE_ORIGINAL_FILES_DAYS`.
 
-- `SYNC_DRY_RUN` — pass `--dry-run` to the script so runs never mutate files.
+## Dashboard Features
 
-### Optional integrations
+The dashboard provides:
 
-- Telegram: set `TELEGRAM_BOT_TOKEN` (or `TELEGRAM_TOKEN`) and `TELEGRAM_CHAT_ID`.
-- `PUID`/`PGID`: passed to all services via Compose to match host permissions.
+- Sync status and progress.
+- Tdarr queue, worker, and node status when Tdarr API settings are configured.
+- Manual sync trigger with dry-run support.
+- Sonarr series/season selection for targeted copy runs.
+- Routing settings for Sonarr/Radarr tags and Tdarr input subfolders.
+- Processed-file metrics and recent history.
+- Database record removal for selected TV, movie, season, episode, or folder records.
+- Restore Originals workflow for replacing transcoded files with archived originals.
 
----
+## Restore Originals
 
-## Web Dashboard (`web/`)
+Restore Originals is protected by `RESTORE_ADMIN_PASSWORD`.
 
-- Built with Next.js 14 + React 18.
-- Dark theme, responsive layout, quick stats panel.
-- Shows live sync status, last/next run timestamps, database size, and the 25 most recent processed files.
-- Shows the active tdarr-sync phase, current title/path, progress bar, item counts, skipped/failed counts, and best-effort ETA.
-- Shows Tdarr queue reachability, active worker details, queue/error counts, worker progress, and worker ETA when Tdarr API settings are configured.
-- Provides a manual trigger form with dry-run and per-series/season selection options.
-- Top-right **Settings** window includes Tdarr server URL/IP, Tdarr API key, and ordered Sonarr/Radarr tag-to-flow rules.
-- Top-right header label shows the running git version and last commit date in `branch (commit-date) | Settings` format.
-- Proxies all `/tdarr-api/*` requests to `NEXT_BACKEND_ORIGIN` (or `http://api:8000` in Docker) and injects `API_AUTH_TOKEN` server-side so the browser never receives it.
+Set it in `.env` before using the dashboard restore workflow:
 
----
+```env
+RESTORE_ADMIN_PASSWORD=replace-with-a-strong-password
+```
 
-## REST API (`api/`)
+The restore workflow:
 
-All endpoints return JSON. `/health` is public; every other endpoint requires `Authorization: Bearer $API_AUTH_TOKEN`.
+1. Lists Sonarr series and processed status.
+2. Lets you select full series or specific seasons.
+3. Restores archived originals back to the library.
+4. Moves the transcoded file into an internal restored-transcodes archive.
+5. Removes processed DB markers only after successful restore.
 
-| Endpoint | Method | Description |
+API endpoints for restore jobs:
+
+| Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/health` | GET | Liveness probe. |
-| `/version` | GET | Returns git/version metadata used by the top-right header label. |
-| `/config` | GET | Sanitised snapshot of active configuration (no secrets exposed). |
-| `/processed-files?limit=50&offset=0` | GET | Recent processed files ordered by newest first. |
-| `/metrics/summary` | GET | Aggregate counts and database metadata. |
-| `/sync/status` | GET | Current/manual sync status, progress snapshot, and Tdarr queue/worker status when configured. |
-| `/sync/run?dry_run=true` | POST | Trigger an immediate sync. Accepts `dry_run` via query or JSON body and supports structured selections (see below). Returns `409` if a run is already in-flight. |
-| `/settings/routing` | GET/PUT | Read/update UI-managed Tdarr server settings and ordered Sonarr/Radarr tag-to-flow routes. |
+| `/restore/series` | GET | List restore candidates. |
+| `/restore/run` | POST | Start a restore job. |
+| `/restore/jobs/{job_id}` | GET | Poll restore job state. |
 
-**Selection payload:** send `POST /sync/run` with a JSON body like:
+## Database And Logs
+
+| Item | Default path |
+| --- | --- |
+| SQLite DB | `/data/sonarr_tdarr_state.db` |
+| Runtime settings | `/data/runtime_settings.json` |
+| Sync progress | `/data/sync_progress.json` |
+| Shared log | `/logs/tdarr_sync.log` |
+
+Back up the host folders behind `TDARR_SYNC_DATA_DIR` and `TDARR_SYNC_LOG_DIR` if you need history.
+
+## API Reference
+
+`/health` is public. Every other endpoint requires the bearer token.
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/health` | GET | Liveness check. |
+| `/version` | GET | Git/version metadata for the dashboard header. |
+| `/config` | GET | Sanitized runtime configuration. |
+| `/metrics/summary` | GET | Processed-file counts and DB metadata. |
+| `/processed-files` | GET | Recent processed files. |
+| `/processed-files/catalog` | GET | Grouped TV/movie/folder processed-record catalog. |
+| `/processed-files/records` | GET | Lazy-loaded processed records for a catalog group. |
+| `/processed-files/delete`, `/processed-files` | POST/DELETE | Remove processed DB markers. |
+| `/sync/status` | GET | Sync state, progress, and Tdarr status. |
+| `/sync/run` | POST | Trigger a sync. |
+| `/settings/routing` | GET/PUT | Read/update Tdarr settings and routes. |
+| `/restore/series` | GET | Restore candidate catalog. |
+| `/restore/run` | POST | Start restore. |
+| `/restore/jobs/{job_id}` | GET | Restore job status. |
+
+Example targeted Sonarr sync request:
 
 ```json
 {
@@ -156,158 +314,66 @@ All endpoints return JSON. `/health` is public; every other endpoint requires `A
 }
 ```
 
-A missing `seasons` field (or `null`) means “all seasons” for that series.
+A missing `seasons` field means all seasons for that series.
 
-The API shares the same `/data` and `/logs` volumes as the runner so you can inspect state via HTTP without accessing the host filesystem.
+## Optional Manual CLI
 
----
-
-## Sync Behaviour
-
-Under the hood Tdarr Sync drives `tdarr_sync.py`, so all original guarantees remain:
-
-- **Copy phase:** evaluates ordered route rules (`source + tag`) from `RUNTIME_SETTINGS_FILE`, then mirrors matching Sonarr/Radarr media into `TDARR_INPUT_DIR/<input_subdir>/<source_prefix>/...`.
-- **Restore phase:** watches `TDARR_OUTPUT_DIR`, resolves routed outputs back to the correct Sonarr or Radarr local mount, archives the original to `<filename><BACKUP_SUFFIX>` (optionally moving to `MOVE_ORIGINAL_FILES_DEST`), then replaces it with the transcoded output.
-- **Retention:** after each restore the sweeper deletes archived originals older than `DELETE_ORIGINAL_FILES_DAYS` (when enabled) and only inside the archive tree.
-- **State tracking:** the SQLite DB prevents duplicate copies by remembering every file that has been queued to Tdarr.
-- **Notifications:** failures log to `/logs/tdarr_sync.log` and optionally send a Telegram alert.
-- **Targeted runs:** setting the `TDARR_SYNC_SELECTION` environment variable to the same JSON structure the API accepts limits the copy phase to the chosen series/seasons (used by the dashboard’s Select mode).
----
-
-## Database & Logging
-
-- Database file: `${TDARR_SYNC_DATA_DIR}/sonarr_tdarr_state.db` (or whatever you set `STATE_DB_FILE` to). Use the bundled `create_db.py` if you want to pre-create the schema.
-- All services emit to a shared log at `/logs/tdarr_sync.log`; each line is prefixed with `[WORKER]`, `[API]`, or `[WEB]` so you can filter quickly.
-- Bind-mount these directories into your backup strategy if you rely on historical logs.
-
----
-
-## Manual CLI Usage (Optional)
-
-If you prefer running the script without Docker, the legacy workflow still lives in `tdarr_sync.py`.
-
-### Requirements
-
-- Python 3.8+
-- `pip install requests python-dotenv`
-- Copy `.env.example` → `.env` and configure it exactly as you would for Docker (the environment variables are shared).
-
-### Commands
+Docker Compose is the supported deployment path. The Python script can still run directly for troubleshooting or legacy installs.
 
 ```bash
-# Full run (copy + restore + sweep)
-python3 tdarr_sync.py
-
-# Dry run (logs actions without making changes)
+python3 -m pip install -r requirements/base.txt
+cp .env.example .env
 python3 tdarr_sync.py --dry-run
-
-# Copy-only run (skip restore for this invocation)
+python3 tdarr_sync.py
 python3 tdarr_sync.py --skip-restore
 ```
 
-> Tip: add `--interactive` when running locally to pick series via a TTY prompt. Containerized runs disable prompts by default to stay non-interactive.
-
-### Scheduling examples
-
-**cron**
-
-```bash
-*/30 * * * * cd /path/to/tdarr_sync && /path/to/.venv/bin/python3 tdarr_sync.py >> /var/log/cron-tdarr_sync.log 2>&1
-```
-
-**systemd**
-
-```
-[Unit]
-Description=Tdarr Sync (Sonarr ➜ Tdarr ➜ Library)
-After=network-online.target
-
-[Service]
-Environment=PYTHONUNBUFFERED=1
-WorkingDirectory=/path/to/tdarr_sync
-ExecStart=/path/to/.venv/bin/python3 tdarr_sync.py
-Restart=on-failure
-User=media
-Group=media
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now tdarr-sync.service
-journalctl -u tdarr-sync.service -f
-```
-
----
-
-## How Backups Are Named & Cleaned
-
-- On restore, if the destination exists it becomes `<name><BACKUP_SUFFIX>` (for example `Episode.mkv.orig`).
-- If that filename already exists, Tdarr Sync appends an epoch timestamp **before** the suffix to keep clean sweeper matches (e.g. `Episode.1700000000.orig`).
-- With `MOVE_ORIGINAL_FILES=true`, the renamed file moves to:
-
-```
-MOVE_ORIGINAL_FILES_DEST/<relative/path/under/BASE_DIR>/Episode.mkv.orig
-```
-
-- Archived files have their mtime updated to “now” so retention windows start when the file was replaced.
-- The sweeper removes files ending with `BACKUP_SUFFIX` inside `MOVE_ORIGINAL_FILES_DEST` once they exceed `DELETE_ORIGINAL_FILES_DAYS` (set `0` to delete immediately).
-
----
-
-## Restore Dashboard Workflow
-
-- Submitting the **Restore Originals** modal now schedules a background restore job. The UI shows the job id and live status until it completes.
-- When the job finishes successfully the modal populates the restore summary; failures surface the error and keep processed markers intact so you can retry.
-- Poll job state directly via the API: `GET /restore/jobs/<job_id>` returns `pending`, `running`, `succeeded`, or `failed` together with the final payload.
-- Need a blocking call? Pass `wait_for_completion=true` in the JSON body for `/restore/run` to wait for completion (useful for CLI automation).
-
----
-
-## Troubleshooting
-
-- **Database missing / schema errors** — the API warns if the DB file is absent. Run Tdarr Sync once (or `python3 create_db.py`) to create it.
-- **Mount paths wrong** — double-check `SONARR_LIBRARY_MOUNT`, `RADARR_LIBRARY_MOUNT`, `HOST_TDARR_INPUT`, `HOST_TDARR_OUTPUT`, and in-container equivalents (`BASE_DIR`, `RADARR_LOCAL_MOUNT_BASE_PATH`, etc.).
-- **Permissions** — if files appear as root-owned on the host, set `PUID`/`PGID` in `.env` to match your media user/group.
-- **Tdarr outputs never restore** — verify Tdarr writes to the mounted `HOST_TDARR_OUTPUT` with the same relative structure the script expects.
-- **Backups not deleting** — the sweeper only touches `MOVE_ORIGINAL_FILES_DEST` and only files ending with the backup suffix.
-
----
+Use `--interactive` only from a real terminal. Containerized runs are intentionally non-interactive.
 
 ## Development
 
-- Install Python deps for the sync/API locally:
-  ```bash
-  pip install -r requirements/base.txt
-  ```
-- Boot the API locally:
-  ```bash
-  uvicorn api.main:app --reload
-  ```
-- Frontend development:
-  ```bash
-  cd web
-  npm install
-  npm run dev
-  ```
-- Compose can be used for full-stack dev with live reload by mounting the repository instead of copying — tweak `docker-compose.override.yml` as needed.
+Run the full local check suite:
 
-Conventional commits are encouraged. The changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and we aim for [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+```bash
+python3 dev-docs/code_check.py
+```
 
----
+Run components manually:
+
+```bash
+python3 -m pip install -r requirements/base.txt
+uvicorn api.main:app --reload
+```
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Current frontend stack:
+
+- Next.js 16
+- React 19
+- ESLint 9
+- TypeScript 6
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| API will not start | `API_AUTH_TOKEN` must be set to a non-placeholder value. |
+| No files copied | Confirm routes exist, source tags exist, and the tag is not `remux`. |
+| Sonarr/Radarr files not found | Fix `SONARR_BASE_PATH`/`LOCAL_MOUNT_BASE_PATH` or `RADARR_BASE_PATH`/`RADARR_LOCAL_MOUNT_BASE_PATH`. |
+| Tdarr outputs do not restore | Confirm Tdarr writes completed files under `TDARR_OUTPUT_DIR` with the same relative path copied into input. |
+| Permission errors | Match `PUID`/`PGID` to the host media user and fix ownership on mounted folders. |
+| Logs missing | Confirm `TDARR_SYNC_LOG_DIR` exists and is writable by `PUID`/`PGID`. |
+| Backups not deleting | Confirm `DELETE_ORIGINAL_FILES=true`, `BACKUP_SUFFIX`, and files are under `MOVE_ORIGINAL_FILES_DEST`. |
 
 ## Security Notes
 
-- Never commit your `.env` (already ignored).
-- Prefer scoped Sonarr API keys and read-only Telegram bots.
-- Place the stack behind a reverse proxy with TLS if you expose the dashboard beyond your LAN.
-
----
-
-## Roadmap / Ideas
-
-- Optional Prometheus metrics export.
-- Tdarr queue introspection for richer status cards.
-- Role-based access control for the dashboard/API.
+- Do not commit `.env` or runtime data files.
+- Rotate any credential that was ever committed or pasted into public logs.
+- Keep `API_AUTH_TOKEN`, Sonarr/Radarr API keys, Tdarr API key, Telegram token, and restore password private.
+- The Compose file binds the API to `127.0.0.1` by default. Put the dashboard behind TLS/auth if exposing it beyond a trusted LAN.
+- Keep `API_CORS_ALLOW_ALL=false` unless you have a specific reason to expose the API cross-origin.
