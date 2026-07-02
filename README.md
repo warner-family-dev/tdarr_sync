@@ -241,7 +241,7 @@ docker buildx build --platform linux/amd64 --load -f Dockerfile -t tdarr-sync:lo
 
 ### Copy Phase
 
-- Loads UI routes from `/data/runtime_settings.json`.
+- Loads UI routes from `/config/runtime_settings.json`.
 - Falls back to `SONARR_TAG_NAME` and `RADARR_TAG_NAME` only when no UI routes exist.
 - Reads Sonarr/Radarr items and tags through their APIs.
 - Copies matching files into Tdarr input subfolders.

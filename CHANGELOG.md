@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.6] - 2026-07-02
+### Removed
+- Removed obsolete split-image Dockerfiles, entrypoints, legacy release notes, and the unused standalone database initialization helper after the combined Docker image migration.
+
+### Fixed
+- Corrected the README runtime settings path to point at `/config/runtime_settings.json`.
+
 ## [2.3.5] - 2026-07-02
 ### Changed
 - Updated the container image workflow so merges to `main` publish the multi-arch `latest` GHCR image automatically, while release tags continue publishing versioned and architecture-specific tags.
