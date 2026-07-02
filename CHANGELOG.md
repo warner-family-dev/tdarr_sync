@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.4] - 2026-07-01
+### Added
+- Added a LinuxServer-style combined Docker image with s6-overlay supervision for the API and web dashboard, plus worker mode for one-shot sync runs.
+- Added GHCR multi-arch image publishing for `linux/amd64` and `linux/arm64`, including versioned manifest tags and architecture-specific tags.
+
+### Changed
+- Updated Compose, environment defaults, and README guidance to use the single published image with `/config` as the preferred persistent state mount while keeping `/data` mounted for compatibility.
+- Updated container scanning CI to build and scan the combined runtime image.
+
 ## [2.3.3] - 2026-07-01
 ### Changed
 - Updated the release branch helper to create only the next development branch and leave version tag creation to publishing the GitHub release draft.

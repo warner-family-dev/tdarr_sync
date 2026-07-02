@@ -1,55 +1,30 @@
 services:
-  worker:
-    build:
-      context: .
-      dockerfile: docker/tdarr.Dockerfile
-    command: ["python", "-m", "services.worker"]
-    profiles:
-      - manual
+  tdarr-sync:
+    image: ghcr.io/warner-family-dev/tdarr_sync:${IMAGE_TAG:-latest}
+    # Uncomment to force a platform, for example on a 64-bit Raspberry Pi:
+    # platform: ${DOCKER_PLATFORM:-linux/arm64}
     env_file:
       - .env
     environment:
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
-      STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
+      STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
+      RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}
+      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/config/sync_progress.json}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
-      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/data/sync_progress.json}
+      NEXT_BACKEND_ORIGIN: http://127.0.0.1:8000
     volumes:
       - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
       - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
       - ${HOST_TDARR_INPUT}:/media/tdarr/input
       - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
       - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
-      - ${TDARR_SYNC_DATA_DIR:-./data}:/data
-      - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
-    restart: on-failure
-
-  api:
-    build:
-      context: .
-      dockerfile: docker/tdarr.Dockerfile
-    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    env_file:
-      - .env
-    environment:
-      TZ: ${TZ}
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
-      STATE_DB_FILE: ${STATE_DB_FILE:-/data/sonarr_tdarr_state.db}
-      LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
-      SYNC_SCRIPT_PATH: ${SYNC_SCRIPT_PATH:-/app/tdarr_sync.py}
-      SYNC_PYTHON_EXECUTABLE: ${SYNC_PYTHON_EXECUTABLE:-python}
-      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/data/sync_progress.json}
-    volumes:
-      - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
-      - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
-      - ${HOST_TDARR_INPUT}:/media/tdarr/input
-      - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
-      - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
+      - ${TDARR_SYNC_CONFIG_DIR:-${TDARR_SYNC_DATA_DIR:-./data}}:/config
       - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
     ports:
+      - "${WEB_PORT:-3000}:3000"
       - "127.0.0.1:${API_PORT:-8000}:8000"
     healthcheck:
       test:
@@ -60,26 +35,31 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
 
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
+  worker:
+    image: ghcr.io/warner-family-dev/tdarr_sync:${IMAGE_TAG:-latest}
+    profiles:
+      - manual
     env_file:
       - .env
     environment:
-      NEXT_BACKEND_ORIGIN: ${NEXT_BACKEND_ORIGIN:-http://api:8000}
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      SERVICE_MODE: worker
+      STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
+      RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}
+      SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/config/sync_progress.json}
       LOG_FILE: ${LOG_FILE:-/logs/tdarr_sync.log}
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "${WEB_PORT:-3000}:3000"
-    restart: unless-stopped
     volumes:
+      - ${SONARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/library
+      - ${RADARR_LIBRARY_MOUNT:-${HOST_LIBRARY_MOUNT}}:/media/radarr_library
+      - ${HOST_TDARR_INPUT}:/media/tdarr/input
+      - ${HOST_TDARR_OUTPUT}:/media/tdarr/output
+      - ${HOST_ARCHIVE_DIR:-./archive}:/media/archive
+      - ${TDARR_SYNC_CONFIG_DIR:-${TDARR_SYNC_DATA_DIR:-./data}}:/config
+      - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
+    restart: "no"

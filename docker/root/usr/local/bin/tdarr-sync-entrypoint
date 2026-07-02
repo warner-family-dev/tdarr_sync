@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${SERVICE_MODE:-}" == "worker" || "${RUN_WORKER:-false}" == "true" ]]; then
+  /usr/local/bin/tdarr-sync-init
+  cd /app
+  exec gosu "${PUID:-1000}:${PGID:-1000}" python -m services.worker
+fi
+
+if [[ "$#" -eq 0 ]]; then
+  exec /init
+fi
+
+exec "$@"

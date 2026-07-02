@@ -94,25 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build API image
-        run: docker build -f docker/tdarr.Dockerfile -t tdarr-sync-api:ci .
+      - name: Build combined image
+        run: docker build -f Dockerfile -t tdarr-sync:ci .
 
-      - name: Scan API image
+      - name: Scan combined image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: tdarr-sync-api:ci
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-
-      - name: Build web image
-        run: docker build -f web/Dockerfile -t tdarr-sync-web:ci web
-
-      - name: Scan web image
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: tdarr-sync-web:ci
+          image-ref: tdarr-sync:ci
           format: table
           exit-code: "1"
           ignore-unfixed: true
