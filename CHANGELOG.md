@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.5] - 2026-07-02
+### Changed
+- Updated the container image workflow so merges to `main` publish the multi-arch `latest` GHCR image automatically, while release tags continue publishing versioned and architecture-specific tags.
+
 ## [2.3.4] - 2026-07-01
 ### Added
 - Added a LinuxServer-style combined Docker image with s6-overlay supervision for the API and web dashboard, plus worker mode for one-shot sync runs.
