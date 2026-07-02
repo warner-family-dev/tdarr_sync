@@ -1,0 +1,4 @@
+#!/command/with-contenv bash
+set -euo pipefail
+cd /app/web
+exec gosu "${PUID:-1000}:${PGID:-1000}" node scripts/start-with-log.js

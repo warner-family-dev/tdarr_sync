@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+LOG_FILE_PATH="${LOG_FILE:-/logs/tdarr_sync.log}"
+STATE_DB_PATH="${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}"
+RUNTIME_SETTINGS_PATH="${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}"
+SYNC_PROGRESS_PATH="${SYNC_PROGRESS_FILE:-/config/sync_progress.json}"
+
+group_name="appgroup"
+user_name="appuser"
+
+if ! getent group "${PGID}" >/dev/null 2>&1; then
+  if getent group "${group_name}" >/dev/null 2>&1; then
+    groupmod -g "${PGID}" "${group_name}"
+  else
+    groupadd -g "${PGID}" "${group_name}"
+  fi
+else
+  group_name="$(getent group "${PGID}" | cut -d: -f1)"
+fi
+
+if ! id -u "${user_name}" >/dev/null 2>&1; then
+  useradd -u "${PUID}" -g "${PGID}" -M -d /app -s /usr/sbin/nologin "${user_name}"
+else
+  usermod -u "${PUID}" "${user_name}"
+  usermod -g "${PGID}" "${user_name}"
+fi
+
+ensure_dir() {
+  local path="$1"
+  if [[ -n "${path}" ]]; then
+    mkdir -p "${path}"
+    chown "${PUID}:${PGID}" "${path}" || true
+  fi
+}
+
+ensure_file_parent() {
+  local path="$1"
+  if [[ -n "${path}" ]]; then
+    ensure_dir "$(dirname "${path}")"
+  fi
+}
+
+ensure_dir /config
+ensure_dir /data
+ensure_dir /logs
+ensure_dir "${BASE_DIR:-/media/library}"
+ensure_dir "${RADARR_LOCAL_MOUNT_BASE_PATH:-/media/radarr_library}"
+ensure_dir "${TDARR_INPUT_DIR:-/media/tdarr/input}"
+ensure_dir "${TDARR_OUTPUT_DIR:-/media/tdarr/output}"
+ensure_dir "${MOVE_ORIGINAL_FILES_DEST:-/media/archive}"
+ensure_file_parent "${STATE_DB_PATH}"
+ensure_file_parent "${RUNTIME_SETTINGS_PATH}"
+ensure_file_parent "${SYNC_PROGRESS_PATH}"
+
+if [[ -n "${LOG_FILE_PATH}" ]]; then
+  ensure_file_parent "${LOG_FILE_PATH}"
+  touch "${LOG_FILE_PATH}"
+  chown "${PUID}:${PGID}" "${LOG_FILE_PATH}" || true
+fi

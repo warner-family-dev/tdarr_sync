@@ -14,13 +14,23 @@ The current implementation supports Sonarr and Radarr as sources. The routing mo
 6. Restores completed files back to the matching Sonarr or Radarr library path.
 7. Archives the replaced original file, then optionally deletes old archived originals after the retention window.
 
-The normal deployment is Docker Compose with three services:
+The normal deployment is a single LinuxServer-style Docker image that runs the API and web dashboard under s6-overlay. The same image also supports a one-shot worker mode through the `manual` Compose profile.
 
-| Service | Purpose |
+| Mode | Purpose |
 | --- | --- |
-| `api` | FastAPI service for dashboard data, settings, manual sync triggers, restore jobs, and database cleanup. |
-| `web` | Next.js dashboard. |
+| `tdarr-sync` | Default service. Runs the FastAPI API and Next.js dashboard in one container. |
 | `worker` | One-shot sync runner used manually or by cron through the `manual` Compose profile. |
+
+## Supported Architectures
+
+The published image is intended to be a Docker manifest with these platforms:
+
+| Architecture | Platform | Tag pattern |
+| --- | --- | --- |
+| x86-64 | `linux/amd64` | `latest`, `vX.Y.Z`, `amd64-vX.Y.Z` |
+| Raspberry Pi 64-bit / ARM64 | `linux/arm64` | `latest`, `vX.Y.Z`, `arm64v8-vX.Y.Z` |
+
+On a 64-bit Raspberry Pi OS install, Docker should pull the arm64 image automatically. If you need to force it, uncomment the `platform: linux/arm64` line in `docker-compose.yml`.
 
 ## Implementation Checklist
 
@@ -37,7 +47,8 @@ Create host folders for:
 | Tdarr input | Files copied by Tdarr Sync and watched by Tdarr. |
 | Tdarr output | Completed files written by Tdarr. |
 | Archive | Originals moved aside before replacement. |
-| Data | SQLite DB, runtime routing settings, and sync progress JSON. |
+| Config | Preferred persistent app state path for SQLite DB, runtime routing settings, and sync progress JSON. |
+| Data | Backward-compatible persistent state mount. |
 | Logs | Shared service log. |
 
 The containers default to `PUID=1000` and `PGID=1000`. Make the data, log, Tdarr input, Tdarr output, archive, and media folders writable by that user/group or update `PUID`/`PGID` in `.env`.
@@ -67,6 +78,7 @@ RADARR_LIBRARY_MOUNT=/mnt/media/movies
 HOST_TDARR_INPUT=/mnt/tdarr/input
 HOST_TDARR_OUTPUT=/mnt/tdarr/output
 HOST_ARCHIVE_DIR=/mnt/tdarr/archive
+TDARR_SYNC_CONFIG_DIR=./config
 TDARR_SYNC_DATA_DIR=./data
 TDARR_SYNC_LOG_DIR=./logs
 ```
@@ -74,6 +86,9 @@ TDARR_SYNC_LOG_DIR=./logs
 Set the in-container paths. These defaults match `docker-compose.yml`:
 
 ```env
+STATE_DB_FILE=/config/sonarr_tdarr_state.db
+RUNTIME_SETTINGS_FILE=/config/runtime_settings.json
+SYNC_PROGRESS_FILE=/config/sync_progress.json
 BASE_DIR=/media/library
 RADARR_LOCAL_MOUNT_BASE_PATH=/media/radarr_library
 TDARR_INPUT_DIR=/media/tdarr/input
@@ -104,7 +119,7 @@ If Sonarr reports files under `/tv` but the container sees the same files under 
 ### 3. Start the Stack
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 Open the dashboard:
@@ -206,6 +221,22 @@ Cron example for regular one-shot syncs:
 */30 * * * * cd /path/to/tdarr_sync && docker compose --profile manual run --rm worker
 ```
 
+## Raspberry Pi Install Notes
+
+Use a 64-bit Raspberry Pi OS image and a current Docker Engine with Compose v2. The default `ghcr.io/warner-family-dev/tdarr_sync:latest` image should resolve to `linux/arm64` automatically on Raspberry Pi. Keep the same `.env` and Compose file as x86-64 hosts.
+
+For local test builds on a Raspberry Pi:
+
+```bash
+docker buildx build --platform linux/arm64 -f Dockerfile -t tdarr-sync:local .
+```
+
+For local x86-64 test builds:
+
+```bash
+docker buildx build --platform linux/amd64 --load -f Dockerfile -t tdarr-sync:local .
+```
+
 ## Runtime Behavior
 
 ### Copy Phase
@@ -274,12 +305,12 @@ API endpoints for restore jobs:
 
 | Item | Default path |
 | --- | --- |
-| SQLite DB | `/data/sonarr_tdarr_state.db` |
-| Runtime settings | `/data/runtime_settings.json` |
-| Sync progress | `/data/sync_progress.json` |
+| SQLite DB | `/config/sonarr_tdarr_state.db` |
+| Runtime settings | `/config/runtime_settings.json` |
+| Sync progress | `/config/sync_progress.json` |
 | Shared log | `/logs/tdarr_sync.log` |
 
-Back up the host folders behind `TDARR_SYNC_DATA_DIR` and `TDARR_SYNC_LOG_DIR` if you need history.
+Back up the host folders behind `TDARR_SYNC_CONFIG_DIR` and `TDARR_SYNC_LOG_DIR` if you need history. `TDARR_SYNC_DATA_DIR` remains mounted for backward compatibility with older `/data`-based installs.
 
 ## API Reference
 
@@ -318,7 +349,7 @@ A missing `seasons` field means all seasons for that series.
 
 ## Optional Manual CLI
 
-Docker Compose is the supported deployment path. The Python script can still run directly for troubleshooting or legacy installs.
+Docker Compose with the published image is the supported deployment path. The Python script can still run directly for troubleshooting or legacy installs.
 
 ```bash
 python3 -m pip install -r requirements/base.txt
