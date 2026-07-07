@@ -26,6 +26,9 @@ __pycache__/
 # Ruff
 .ruff_cache
 
+# CodeGraph local index
+.codegraph/
+
 # API build/cache
 /api/.pytest_cache/
 /api/.venv
