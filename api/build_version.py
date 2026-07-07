@@ -128,36 +128,78 @@ def _resolve_build_version_from_git_command(repo_root: Path) -> dict | None:
         return None
 
 
+def _clean_env(name: str) -> str:
+    return os.getenv(name, "").strip()
+
+
+def _build_version_payload(
+    *,
+    image_tag: str = "",
+    image_published_date: str = "",
+    git_version: str = "",
+    commit_date: str = "",
+    commit_sha: str = "",
+    source: str,
+) -> dict:
+    display_version = image_tag or git_version or "unknown"
+    display_date = image_published_date or commit_date or "unknown"
+    return {
+        "image_tag": image_tag or display_version,
+        "image_published_date": image_published_date or display_date,
+        "git_version": display_version,
+        "commit_date": display_date,
+        "commit_sha": commit_sha,
+        "source": source,
+    }
+
+
 def resolve_build_version(repo_root: Path | None = None) -> dict:
-    env_version = os.getenv("APP_GIT_VERSION", "").strip()
-    env_date = os.getenv("APP_GIT_COMMIT_DATE", "").strip()
-    env_sha = os.getenv("APP_GIT_COMMIT_SHA", "").strip()
-    if env_version and env_date:
-        return {
-            "git_version": env_version,
-            "commit_date": env_date,
-            "commit_sha": env_sha,
-            "source": "env",
-        }
+    runtime_image_tag = _clean_env("IMAGE_TAG")
+    baked_image_tag = _clean_env("APP_IMAGE_TAG")
+    image_published_date = _clean_env("APP_IMAGE_PUBLISHED_DATE")
+    image_sha = _clean_env("APP_IMAGE_REVISION") or _clean_env("APP_GIT_COMMIT_SHA")
+    image_tag = runtime_image_tag or baked_image_tag
+
+    env_version = _clean_env("APP_GIT_VERSION")
+    env_date = _clean_env("APP_GIT_COMMIT_DATE")
+    env_sha = image_sha or _clean_env("APP_GIT_COMMIT_SHA")
 
     current_repo_root = repo_root or Path(__file__).resolve().parents[1]
     git_data = _resolve_build_version_from_git_command(current_repo_root) or _resolve_build_version_from_git_files(
         current_repo_root
     )
-    if git_data:
-        return {
-            "git_version": env_version or git_data["git_version"] or "unknown",
-            "commit_date": env_date or git_data["commit_date"] or "unknown",
-            "commit_sha": env_sha or git_data["commit_sha"],
-            "source": "env" if (env_version or env_date or env_sha) else git_data["source"],
-        }
+    if image_tag or image_published_date:
+        return _build_version_payload(
+            image_tag=image_tag,
+            image_published_date=image_published_date,
+            git_version=env_version or (git_data["git_version"] if git_data else ""),
+            commit_date=env_date or (git_data["commit_date"] if git_data else ""),
+            commit_sha=env_sha or (git_data["commit_sha"] if git_data else ""),
+            source="image",
+        )
 
-    return {
-        "git_version": env_version or "unknown",
-        "commit_date": env_date or "unknown",
-        "commit_sha": env_sha or "",
-        "source": "unknown",
-    }
+    if env_version and env_date:
+        return _build_version_payload(
+            git_version=env_version,
+            commit_date=env_date,
+            commit_sha=env_sha,
+            source="env",
+        )
+
+    if git_data:
+        return _build_version_payload(
+            git_version=env_version or git_data["git_version"] or "unknown",
+            commit_date=env_date or git_data["commit_date"] or "unknown",
+            commit_sha=env_sha or git_data["commit_sha"],
+            source="env" if (env_version or env_date or env_sha) else git_data["source"],
+        )
+
+    return _build_version_payload(
+        git_version=env_version or "unknown",
+        commit_date=env_date or "unknown",
+        commit_sha=env_sha or "",
+        source="unknown",
+    )
 
 
 __all__ = ["resolve_build_version", "_resolve_build_version_from_git_files"]

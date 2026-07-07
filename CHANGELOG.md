@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.3.7] - 2026-07-07
+### Changed
+- Updated container version metadata so the dashboard displays the selected image tag and GHCR publish date, with Compose passing `IMAGE_TAG` into the runtime and CI baking image publish metadata into GHCR builds.
+
 ## [2.3.6] - 2026-07-02
 ### Removed
 - Removed obsolete split-image Dockerfiles, entrypoints, legacy release notes, and the unused standalone database initialization helper after the combined Docker image migration.

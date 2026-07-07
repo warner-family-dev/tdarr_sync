@@ -9,6 +9,7 @@ services:
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      IMAGE_TAG: ${IMAGE_TAG:-latest}
       STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
       RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}
       SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/config/sync_progress.json}
@@ -48,6 +49,7 @@ services:
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      IMAGE_TAG: ${IMAGE_TAG:-latest}
       SERVICE_MODE: worker
       STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
       RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}

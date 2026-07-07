@@ -5,10 +5,12 @@ import { apiFetchJson } from "./apiClient";
 import RoutingSettings from "./RoutingSettings";
 
 type BuildVersion = {
+  image_tag: string;
+  image_published_date: string;
   git_version: string;
   commit_date: string;
   commit_sha: string;
-  source: "env" | "git" | "unknown";
+  source: "image" | "env" | "git" | "unknown";
 };
 
 function buildErrorMessage(error: unknown): string {
@@ -34,6 +36,8 @@ export default function SettingsLauncher() {
       } catch (error) {
         if (active) {
           setVersion({
+            image_tag: "unknown",
+            image_published_date: "unknown",
             git_version: "unknown",
             commit_date: "unknown",
             commit_sha: "",
@@ -52,7 +56,9 @@ export default function SettingsLauncher() {
     if (!version) {
       return "loading-version";
     }
-    return `${version.git_version} (${version.commit_date})`;
+    const displayTag = version.image_tag || version.git_version || "unknown";
+    const displayDate = version.image_published_date || version.commit_date || "unknown";
+    return `${displayTag} (${displayDate})`;
   }, [version]);
 
   return (

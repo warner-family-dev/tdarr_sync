@@ -187,10 +187,12 @@ class RoutingSettingsResponse(BaseModel):
 
 
 class BuildVersion(BaseModel):
+    image_tag: str
+    image_published_date: str
     git_version: str
     commit_date: str
     commit_sha: str
-    source: Literal["env", "git", "unknown"]
+    source: Literal["image", "env", "git", "unknown"]
 
 
 class RestoreSeasonEntry(BaseModel):
