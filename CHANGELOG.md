@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Corrected the README runtime settings path to point at `/config/runtime_settings.json`.
+- Added `.codegraph/` to `.gitignore` so local CodeGraph indexes remain untracked.
 
 ## [2.3.5] - 2026-07-02
 ### Changed
