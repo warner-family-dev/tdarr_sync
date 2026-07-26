@@ -7,12 +7,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("API_AUTH_TOKEN", "tdarr-sync-test-api-token")
-os.environ.setdefault("STATE_DB_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test-state.db"))
-os.environ.setdefault("LOG_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test.log"))
+os.environ.setdefault(
+    "STATE_DB_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test-state.db")
+)
+os.environ.setdefault(
+    "LOG_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test.log")
+)
 
 try:
     import pydantic  # noqa: F401
-except Exception:
+except ImportError:
     pydantic_stub = types.ModuleType("pydantic")
 
     class _BaseModel:
@@ -23,9 +27,19 @@ except Exception:
                 elif key == "tdarr" and isinstance(value, dict):
                     value = sys.modules["api.schemas"].TdarrStatus(**value)
                 elif key == "workers" and isinstance(value, list):
-                    value = [sys.modules["api.schemas"].TdarrWorkerStatus(**item) if isinstance(item, dict) else item for item in value]
+                    value = [
+                        sys.modules["api.schemas"].TdarrWorkerStatus(**item)
+                        if isinstance(item, dict)
+                        else item
+                        for item in value
+                    ]
                 elif key == "nodes" and isinstance(value, list):
-                    value = [sys.modules["api.schemas"].TdarrNodeStatus(**item) if isinstance(item, dict) else item for item in value]
+                    value = [
+                        sys.modules["api.schemas"].TdarrNodeStatus(**item)
+                        if isinstance(item, dict)
+                        else item
+                        for item in value
+                    ]
                 setattr(self, key, value)
 
         def model_dump(self):
@@ -42,7 +56,7 @@ except Exception:
 
 try:
     import fastapi  # noqa: F401
-except Exception:
+except ImportError:
     fastapi_stub = types.ModuleType("fastapi")
 
     class _HTTPException(Exception):
@@ -123,27 +137,31 @@ except Exception:
     sys.modules["starlette"] = starlette_stub
     sys.modules["starlette.responses"] = responses_stub
 
-from api.main import sync_status  # noqa: E402
-from api.tdarr_client import TdarrClient  # noqa: E402
+from api.main import sync_status
+from api.tdarr_client import TdarrClient
 
 
 class SyncStatusApiTests(unittest.TestCase):
     def test_sync_status_works_without_progress_file(self):
-        with patch("api.main.runner.status") as mock_status, patch("api.main.read_progress_file", return_value=None), patch(
-            "api.main.fetch_tdarr_status",
-            return_value={
-                "configured": False,
-                "reachable": False,
-                "server_url": "",
-                "error": "Tdarr server URL is not configured.",
-                "queue_count": None,
-                "error_count": None,
-                "job_error_count": None,
-                "show_job_error_count": False,
-                "active_worker_count": 0,
-                "workers": [],
-                "nodes": [],
-            },
+        with (
+            patch("api.main.runner.status") as mock_status,
+            patch("api.main.read_progress_file", return_value=None),
+            patch(
+                "api.main.fetch_tdarr_status",
+                return_value={
+                    "configured": False,
+                    "reachable": False,
+                    "server_url": "",
+                    "error": "Tdarr server URL is not configured.",
+                    "queue_count": None,
+                    "error_count": None,
+                    "job_error_count": None,
+                    "show_job_error_count": False,
+                    "active_worker_count": 0,
+                    "workers": [],
+                    "nodes": [],
+                },
+            ),
         ):
             mock_status.return_value = {
                 "running": False,
@@ -174,21 +192,25 @@ class SyncStatusApiTests(unittest.TestCase):
             "updated_at": 120,
             "elapsed_seconds": 20,
         }
-        with patch("api.main.runner.status") as mock_status, patch("api.main.read_progress_file", return_value=progress), patch(
-            "api.main.fetch_tdarr_status",
-            return_value={
-                "configured": True,
-                "reachable": False,
-                "server_url": "http://tdarr:8266",
-                "error": "connection failed",
-                "queue_count": None,
-                "error_count": None,
-                "job_error_count": None,
-                "show_job_error_count": False,
-                "active_worker_count": 0,
-                "workers": [],
-                "nodes": [],
-            },
+        with (
+            patch("api.main.runner.status") as mock_status,
+            patch("api.main.read_progress_file", return_value=progress),
+            patch(
+                "api.main.fetch_tdarr_status",
+                return_value={
+                    "configured": True,
+                    "reachable": False,
+                    "server_url": "http://tdarr:8266",
+                    "error": "connection failed",
+                    "queue_count": None,
+                    "error_count": None,
+                    "job_error_count": None,
+                    "show_job_error_count": False,
+                    "active_worker_count": 0,
+                    "workers": [],
+                    "nodes": [],
+                },
+            ),
         ):
             mock_status.return_value = {
                 "running": True,
@@ -222,7 +244,7 @@ class TdarrClientTests(unittest.TestCase):
         with patch.object(client, "_request_json", side_effect=fake_request):
             payload = client.fetch_status()
 
-        crud_call = [call for call in calls if call[1] == "/api/v2/cruddb"][0]
+        crud_call = next(call for call in calls if call[1] == "/api/v2/cruddb")
         self.assertEqual(crud_call[2]["json"]["data"]["mode"], "getAll")
         self.assertTrue(payload["reachable"])
         self.assertIsNone(payload["error"])
@@ -269,7 +291,11 @@ class TdarrClientTests(unittest.TestCase):
                         "nodeName": "Windows-Node",
                         "remoteAddress": "192.0.2.10",
                         "nodePaused": False,
-                        "workerLimits": {"transcodecpu": 0, "transcodegpu": 6, "healthcheckgpu": 2},
+                        "workerLimits": {
+                            "transcodecpu": 0,
+                            "transcodegpu": 6,
+                            "healthcheckgpu": 2,
+                        },
                         "workers": {
                             "male-mutt": {
                                 "status": "Running transcode",
@@ -308,13 +334,23 @@ class TdarrClientTests(unittest.TestCase):
                     return [{"DBQueue": 0}]
                 if collection == "FileJSONDB":
                     return [
-                        {"file": "/media/queued.mkv", "HealthCheck": "Queued", "TranscodeDecisionMaker": "Queued"},
-                        {"file": "/media/current-error.mkv", "TranscodeDecisionMaker": "Transcode error"},
+                        {
+                            "file": "/media/queued.mkv",
+                            "HealthCheck": "Queued",
+                            "TranscodeDecisionMaker": "Queued",
+                        },
+                        {
+                            "file": "/media/current-error.mkv",
+                            "TranscodeDecisionMaker": "Transcode error",
+                        },
                         {"file": "/media/complete.mkv", "HealthCheck": "Success"},
                     ]
                 if collection == "JobsJSONDB":
                     return [
-                        {"file": "/media/old-success.mkv", "status": "Transcode success"},
+                        {
+                            "file": "/media/old-success.mkv",
+                            "status": "Transcode success",
+                        },
                         {"file": "/media/old-error.mkv", "status": "Transcode error"},
                         {"file": "/media/old-health-error.mkv", "status": "Error"},
                     ]

@@ -2,11 +2,57 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
-from api.build_version import _resolve_build_version_from_git_files
+from api.build_version import (
+    _resolve_build_version_from_git_files,
+    resolve_build_version,
+)
 
 
 class BuildVersionResolverTests(unittest.TestCase):
+    def test_runtime_image_tag_overrides_baked_image_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env = {
+                "IMAGE_TAG": "latest",
+                "APP_IMAGE_TAG": "v2.3.4",
+                "APP_IMAGE_PUBLISHED_DATE": "2026-07-07",
+                "APP_IMAGE_REVISION": "abcdef1",
+                "APP_GIT_VERSION": "",
+                "APP_GIT_COMMIT_DATE": "",
+                "APP_GIT_COMMIT_SHA": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                resolved = resolve_build_version(Path(tmp_dir))
+
+        self.assertEqual(resolved["image_tag"], "latest")
+        self.assertEqual(resolved["image_published_date"], "2026-07-07")
+        self.assertEqual(resolved["git_version"], "latest")
+        self.assertEqual(resolved["commit_date"], "2026-07-07")
+        self.assertEqual(resolved["commit_sha"], "abcdef1")
+        self.assertEqual(resolved["source"], "image")
+
+    def test_baked_image_tag_is_used_without_runtime_image_tag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            env = {
+                "IMAGE_TAG": "",
+                "APP_IMAGE_TAG": "v2.3.4",
+                "APP_IMAGE_PUBLISHED_DATE": "2026-07-02",
+                "APP_IMAGE_REVISION": "1234567",
+                "APP_GIT_VERSION": "",
+                "APP_GIT_COMMIT_DATE": "",
+                "APP_GIT_COMMIT_SHA": "",
+            }
+            with patch.dict("os.environ", env, clear=False):
+                resolved = resolve_build_version(Path(tmp_dir))
+
+        self.assertEqual(resolved["image_tag"], "v2.3.4")
+        self.assertEqual(resolved["image_published_date"], "2026-07-02")
+        self.assertEqual(resolved["git_version"], "v2.3.4")
+        self.assertEqual(resolved["commit_date"], "2026-07-02")
+        self.assertEqual(resolved["commit_sha"], "1234567")
+        self.assertEqual(resolved["source"], "image")
+
     def test_reads_branch_sha_and_commit_date_from_git_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
@@ -14,9 +60,13 @@ class BuildVersionResolverTests(unittest.TestCase):
             (git_dir / "refs" / "heads" / "dev").mkdir(parents=True, exist_ok=True)
             (git_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-            (git_dir / "HEAD").write_text("ref: refs/heads/dev/v1.1.3\n", encoding="utf-8")
+            (git_dir / "HEAD").write_text(
+                "ref: refs/heads/dev/v1.1.3\n", encoding="utf-8"
+            )
             full_sha = "a1b2c3d4e5f678901234567890abcdef12345678"
-            (git_dir / "refs" / "heads" / "dev" / "v1.1.3").write_text(f"{full_sha}\n", encoding="utf-8")
+            (git_dir / "refs" / "heads" / "dev" / "v1.1.3").write_text(
+                f"{full_sha}\n", encoding="utf-8"
+            )
 
             ts = 1737244800  # 2025-01-19 UTC
             (git_dir / "logs" / "HEAD").write_text(
@@ -25,7 +75,9 @@ class BuildVersionResolverTests(unittest.TestCase):
             )
 
             resolved = _resolve_build_version_from_git_files(repo_root)
-            expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
             self.assertEqual(resolved["git_version"], "dev/v1.1.3")
             self.assertEqual(resolved["commit_date"], expected_date)
             self.assertEqual(resolved["commit_sha"], full_sha[:7])

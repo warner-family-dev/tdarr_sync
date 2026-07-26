@@ -18,8 +18,11 @@ FROM node:${NODE_VERSION}-bookworm-slim AS node-runtime
 FROM python:${PYTHON_VERSION}-slim AS runtime
 ARG TARGETARCH
 ARG S6_OVERLAY_VERSION
+ARG APP_IMAGE_TAG=unknown
+ARG APP_IMAGE_PUBLISHED_DATE=unknown
+ARG APP_IMAGE_REVISION=
 
-ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     NODE_ENV=production     NEXT_TELEMETRY_DISABLED=1     TZ=UTC     PUID=1000     PGID=1000     STATE_DB_FILE=/config/sonarr_tdarr_state.db     RUNTIME_SETTINGS_FILE=/config/runtime_settings.json     SYNC_PROGRESS_FILE=/config/sync_progress.json     LOG_FILE=/logs/tdarr_sync.log     NEXT_BACKEND_ORIGIN=http://127.0.0.1:8000     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0     S6_BEHAVIOUR_IF_STAGE2_FAILS=2
+ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     NODE_ENV=production     NEXT_TELEMETRY_DISABLED=1     TZ=UTC     PUID=1000     PGID=1000     APP_IMAGE_TAG=${APP_IMAGE_TAG}     APP_IMAGE_PUBLISHED_DATE=${APP_IMAGE_PUBLISHED_DATE}     APP_IMAGE_REVISION=${APP_IMAGE_REVISION}     APP_GIT_COMMIT_SHA=${APP_IMAGE_REVISION}     STATE_DB_FILE=/config/sonarr_tdarr_state.db     RUNTIME_SETTINGS_FILE=/config/runtime_settings.json     SYNC_PROGRESS_FILE=/config/sync_progress.json     LOG_FILE=/logs/tdarr_sync.log     NEXT_BACKEND_ORIGIN=http://127.0.0.1:8000     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0     S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
 RUN apt-get update &&     apt-get install -y --no-install-recommends       ca-certificates       bash       curl       gosu       libstdc++6       xz-utils &&     rm -rf /var/lib/apt/lists/* &&     case "${TARGETARCH:-amd64}" in       amd64) s6_arch="x86_64" ;;       arm64) s6_arch="aarch64" ;;       *) echo "Unsupported TARGETARCH: ${TARGETARCH:-unset}" >&2; exit 1 ;;     esac &&     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz"       | tar -C / -Jxpf - &&     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${s6_arch}.tar.xz"       | tar -C / -Jxpf -
 

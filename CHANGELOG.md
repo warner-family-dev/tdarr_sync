@@ -1,6 +1,22 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Changed
+- Modernized Python type annotations, imports, and formatting to satisfy the current Ruff ruleset across application and test code.
+- Upgraded Next.js and its ESLint configuration to 16.2.12, React and React DOM to 19.2.8, and refreshed compatible frontend type and transitive dependencies.
+
+### Fixed
+- Replaced overly broad exception handlers with targeted filesystem, network, parsing, and database errors while retaining explicit process-boundary safeguards.
+- Bound copy-progress callbacks to the active media item and corrected smaller lint findings in runtime settings, timestamps, API defaults, and tests.
+
+### Security
+- Remediated the production Next.js, PostCSS, and Sharp advisories by pinning fixed releases and verified that the production frontend and Python dependency audits report no known vulnerabilities.
+
+## [2.3.7] - 2026-07-07
+### Changed
+- Updated container version metadata so the dashboard displays the selected image tag and GHCR publish date, with Compose passing `IMAGE_TAG` into the runtime and CI baking image publish metadata into GHCR builds.
+
 ## [2.3.6] - 2026-07-02
 ### Removed
 - Removed obsolete split-image Dockerfiles, entrypoints, legacy release notes, and the unused standalone database initialization helper after the combined Docker image migration.

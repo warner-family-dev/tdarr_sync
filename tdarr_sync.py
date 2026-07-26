@@ -17,19 +17,20 @@ New:
 import argparse
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import shutil
 import sqlite3
 import sys
 import time
 import uuid
-from datetime import datetime
+from collections.abc import Callable
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
+
 from runtime_settings import load_runtime_settings, settings_path_from_env
 from sync_progress import ProgressReporter, progress_path_from_env
 
@@ -49,29 +50,55 @@ try:
     TDARR_OUTPUT_DIR = Path(os.environ["TDARR_OUTPUT_DIR"]).resolve()
 
     SONARR_BASE_PATH = Path(os.environ.get("SONARR_BASE_PATH", "/tv"))
-    LOCAL_MOUNT_BASE_PATH = Path(os.environ.get("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos"))
+    LOCAL_MOUNT_BASE_PATH = Path(
+        os.environ.get("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos")
+    )
     RADARR_BASE_PATH = Path(os.environ.get("RADARR_BASE_PATH", "/movies"))
-    RADARR_LOCAL_MOUNT_BASE_PATH = Path(os.environ.get("RADARR_LOCAL_MOUNT_BASE_PATH", str(BASE_DIR)))
+    RADARR_LOCAL_MOUNT_BASE_PATH = Path(
+        os.environ.get("RADARR_LOCAL_MOUNT_BASE_PATH", str(BASE_DIR))
+    )
 
-    RENAME_ORIGINAL_FILES = os.environ.get("RENAME_ORIGINAL_FILES", "True").lower() in ("true", "1", "yes")
+    RENAME_ORIGINAL_FILES = os.environ.get("RENAME_ORIGINAL_FILES", "True").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     BACKUP_SUFFIX = os.environ.get("BACKUP_SUFFIX", ".orig")
-    MOVE_ORIGINAL_FILES = os.environ.get("MOVE_ORIGINAL_FILES", "False").lower() in ("true", "1", "yes")
-    MOVE_ORIGINAL_FILES_DEST = Path(os.environ.get("MOVE_ORIGINAL_FILES_DEST", "/mnt/originals_archive"))
-    DELETE_ORIGINAL_FILES = os.environ.get("DELETE_ORIGINAL_FILES", "False").lower() in ("true", "1", "yes")
+    MOVE_ORIGINAL_FILES = os.environ.get("MOVE_ORIGINAL_FILES", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    MOVE_ORIGINAL_FILES_DEST = Path(
+        os.environ.get("MOVE_ORIGINAL_FILES_DEST", "/mnt/originals_archive")
+    )
+    DELETE_ORIGINAL_FILES = os.environ.get(
+        "DELETE_ORIGINAL_FILES", "False"
+    ).lower() in ("true", "1", "yes")
     DELETE_ORIGINAL_FILES_DAYS = int(os.environ.get("DELETE_ORIGINAL_FILES_DAYS", "30"))
 
     # Interactive default via .env (new)
-    ENV_INTERACTIVE = os.environ.get("INTERACTIVE", "False").lower() in ("true", "1", "yes")
+    ENV_INTERACTIVE = os.environ.get("INTERACTIVE", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
     # Accept either TELEGRAM_BOT_TOKEN or TELEGRAM_TOKEN without requiring .env change
-    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
+    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get(
+        "TELEGRAM_TOKEN"
+    )
     TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-    LOG_FILE = os.environ.get("LOG_FILE", "/var/log/sonarr_tdarr_sync/sonarr_tdarr_sync.log")
-    LOG_MAX_BYTES = int(os.environ.get("LOG_MAX_BYTES", 10 * 1024 * 1024))
-    LOG_BACKUP_COUNT = int(os.environ.get("LOG_BACKUP_COUNT", 3))
+    LOG_FILE = os.environ.get(
+        "LOG_FILE", "/var/log/sonarr_tdarr_sync/sonarr_tdarr_sync.log"
+    )
+    LOG_MAX_BYTES = int(os.environ.get("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
+    LOG_BACKUP_COUNT = int(os.environ.get("LOG_BACKUP_COUNT", "3"))
 
-    STATE_DB_FILE = Path(os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db")).resolve()
+    STATE_DB_FILE = Path(
+        os.environ.get("STATE_DB_FILE", "sonarr_tdarr_state.db")
+    ).resolve()
     RUNTIME_SETTINGS_FILE = settings_path_from_env().resolve()
     SYNC_PROGRESS_FILE = progress_path_from_env().resolve()
 except KeyError as e:
@@ -84,15 +111,19 @@ SOURCE_PREFIXES = {
 }
 # Temporary route-tag block list. Any matching routes are ignored for copy + restore handling.
 TEMP_DISABLED_ROUTE_TAGS = {"remux"}
-PROGRESS: Optional[ProgressReporter] = None
+PROGRESS: ProgressReporter | None = None
 
 
-def _progress_begin(phase: str, *, total_items: Optional[int] = None, action: str = "planning") -> None:
+def _progress_begin(
+    phase: str, *, total_items: int | None = None, action: str = "planning"
+) -> None:
     if PROGRESS:
         PROGRESS.begin_phase(phase, total_items=total_items, action=action)
 
 
-def _progress_total(total_items: int, *, action: str = "processing", message: Optional[str] = None) -> None:
+def _progress_total(
+    total_items: int, *, action: str = "processing", message: str | None = None
+) -> None:
     if PROGRESS:
         PROGRESS.set_total(total_items, action=action, message=message)
 
@@ -100,11 +131,11 @@ def _progress_total(total_items: int, *, action: str = "processing", message: Op
 def _progress_advance(
     *,
     action: str,
-    source: Optional[str] = None,
-    title: Optional[str] = None,
-    path: Optional[Path] = None,
-    destination: Optional[Path] = None,
-    message: Optional[str] = None,
+    source: str | None = None,
+    title: str | None = None,
+    path: Path | None = None,
+    destination: Path | None = None,
+    message: str | None = None,
     skipped: bool = False,
     failed: bool = False,
 ) -> None:
@@ -124,11 +155,11 @@ def _progress_advance(
 def _progress_current(
     *,
     action: str,
-    source: Optional[str] = None,
-    title: Optional[str] = None,
-    path: Optional[Path] = None,
-    destination: Optional[Path] = None,
-    message: Optional[str] = None,
+    source: str | None = None,
+    title: str | None = None,
+    path: Path | None = None,
+    destination: Path | None = None,
+    message: str | None = None,
 ) -> None:
     if PROGRESS:
         PROGRESS.action = action
@@ -140,13 +171,16 @@ def _progress_current(
             message=message,
         )
 
+
 # -------------------- Logging --------------------
 log_path = Path(LOG_FILE)
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("tdarr_sync")
 logger.setLevel(logging.INFO)
-handler = RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
+handler = RotatingFileHandler(
+    LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT
+)
 formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -155,11 +189,17 @@ console = logging.StreamHandler()
 console.setFormatter(formatter)
 logger.addHandler(console)
 
+
 # -------------------- Helpers --------------------
-def _fmt_ts(epoch: Optional[int]) -> str:
+def _fmt_ts(epoch: int | None) -> str:
     if not epoch:
         return "-"
-    return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        datetime.fromtimestamp(epoch, tz=timezone.utc)
+        .astimezone()
+        .strftime("%Y-%m-%d %H:%M:%S")
+    )
+
 
 def telegram_send_message(text: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -171,17 +211,21 @@ def telegram_send_message(text: str):
         r = requests.post(url, json=payload, timeout=10)
         r.raise_for_status()
         logger.info("Sent Telegram notification.")
-    except Exception as e:
+    except requests.RequestException as e:
         logger.error("Failed to send Telegram message: %s", e)
 
-def report_error_and_exit(msg: str, exc: Exception = None):
+
+def report_error_and_exit(msg: str, exc: Exception | None = None):
     logger.error(msg)
     if exc:
         logger.exception(exc)
     telegram_send_message(f"❗ *tdarr_sync error:*\n{msg}\n{exc if exc else ''}")
     raise SystemExit(1)
 
-def _arr_get(base_url: str, api_key: str, endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+
+def _arr_get(
+    base_url: str, api_key: str, endpoint: str, params: dict | None = None
+) -> requests.Response:
     query = dict(params or {})
     query["apikey"] = api_key
     url = base_url.rstrip("/") + "/api/v3" + endpoint
@@ -190,11 +234,11 @@ def _arr_get(base_url: str, api_key: str, endpoint: str, params: Optional[Dict] 
     return response
 
 
-def sonarr_get(endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+def sonarr_get(endpoint: str, params: dict | None = None) -> requests.Response:
     return _arr_get(SONARR_URL, SONARR_API_KEY, endpoint, params)
 
 
-def radarr_get(endpoint: str, params: Optional[Dict] = None) -> requests.Response:
+def radarr_get(endpoint: str, params: dict | None = None) -> requests.Response:
     if not RADARR_URL or not RADARR_API_KEY:
         raise RuntimeError("Radarr is not configured.")
     return _arr_get(RADARR_URL, RADARR_API_KEY, endpoint, params)
@@ -204,11 +248,14 @@ def _translate_path(arr_path: str, arr_base_path: Path, local_mount_path: Path) 
     """Map an ARR path rooted at arr_base_path to local_mount_path."""
     candidate = Path(arr_path)
     try:
-        if candidate.is_absolute() and candidate.parts[: len(arr_base_path.parts)] == arr_base_path.parts:
+        if (
+            candidate.is_absolute()
+            and candidate.parts[: len(arr_base_path.parts)] == arr_base_path.parts
+        ):
             relative = candidate.relative_to(arr_base_path)
             return local_mount_path.joinpath(relative)
         return candidate
-    except Exception as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         logger.warning("Path translation failed for '%s': %s", arr_path, exc)
         return candidate
 
@@ -221,19 +268,21 @@ def translate_radarr_path(radarr_path: str) -> Path:
     return _translate_path(radarr_path, RADARR_BASE_PATH, RADARR_LOCAL_MOUNT_BASE_PATH)
 
 
-def get_episode_files_for_series(series_id: int) -> List[Dict]:
+def get_episode_files_for_series(series_id: int) -> list[dict]:
     try:
         return sonarr_get("/episodefile", params={"seriesId": series_id}).json()
-    except Exception as e:
-        report_error_and_exit(f"Failed fetching episode files for series {series_id}", e)
+    except (requests.RequestException, RuntimeError, ValueError) as e:
+        report_error_and_exit(
+            f"Failed fetching episode files for series {series_id}", e
+        )
 
 
-def get_tag_lookup(source: str) -> Dict[str, int]:
+def get_tag_lookup(source: str) -> dict[str, int]:
     getter = sonarr_get if source == "sonarr" else radarr_get
-    label_to_id: Dict[str, int] = {}
+    label_to_id: dict[str, int] = {}
     try:
         tags = getter("/tag").json()
-    except Exception as exc:
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
         report_error_and_exit(f"Failed to load tags from {source.capitalize()}", exc)
     for tag in tags:
         label = str(tag.get("label", "")).strip()
@@ -247,8 +296,8 @@ def get_tag_lookup(source: str) -> Dict[str, int]:
 
 
 def _find_route_for_item(
-    item_tag_ids: List[int], routes: List[Dict[str, str]], tag_lookup: Dict[str, int]
-) -> Optional[Dict[str, str]]:
+    item_tag_ids: list[int], routes: list[dict[str, str]], tag_lookup: dict[str, int]
+) -> dict[str, str] | None:
     for route in routes:
         route_tag_id = tag_lookup.get(route["tag"].lower())
         if route_tag_id is None:
@@ -258,8 +307,8 @@ def _find_route_for_item(
     return None
 
 
-def _normalize_tag_ids(raw_tags: object) -> List[int]:
-    normalized: List[int] = []
+def _normalize_tag_ids(raw_tags: object) -> list[int]:
+    normalized: list[int] = []
     if not isinstance(raw_tags, list):
         return normalized
     for value in raw_tags:
@@ -270,15 +319,15 @@ def _normalize_tag_ids(raw_tags: object) -> List[int]:
     return normalized
 
 
-def _route_tag(route: Dict[str, object]) -> str:
+def _route_tag(route: dict[str, object]) -> str:
     return str(route.get("tag", "")).strip().lower()
 
 
 def _partition_routes_by_disabled_tag(
-    routes: List[Dict[str, str]],
-) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
-    enabled: List[Dict[str, str]] = []
-    disabled: List[Dict[str, str]] = []
+    routes: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    enabled: list[dict[str, str]] = []
+    disabled: list[dict[str, str]] = []
     for route in routes:
         if _route_tag(route) in TEMP_DISABLED_ROUTE_TAGS:
             disabled.append(route)
@@ -287,7 +336,7 @@ def _partition_routes_by_disabled_tag(
     return enabled, disabled
 
 
-def _log_disabled_routes(disabled_routes: List[Dict[str, str]], *, scope: str) -> None:
+def _log_disabled_routes(disabled_routes: list[dict[str, str]], *, scope: str) -> None:
     if not disabled_routes:
         return
     tags = sorted({_route_tag(route) for route in disabled_routes if _route_tag(route)})
@@ -299,8 +348,8 @@ def _log_disabled_routes(disabled_routes: List[Dict[str, str]], *, scope: str) -
     )
 
 
-def _disabled_route_input_subdirs(runtime_settings: Dict[str, object]) -> Set[str]:
-    disabled_subdirs: Set[str] = set()
+def _disabled_route_input_subdirs(runtime_settings: dict[str, object]) -> set[str]:
+    disabled_subdirs: set[str] = set()
     configured_routes = runtime_settings.get("routes", [])
     if not isinstance(configured_routes, list):
         return disabled_subdirs
@@ -316,7 +365,7 @@ def _disabled_route_input_subdirs(runtime_settings: Dict[str, object]) -> Set[st
     return disabled_subdirs
 
 
-def _route_input_root(route: Dict[str, str], source: str) -> Path:
+def _route_input_root(route: dict[str, str], source: str) -> Path:
     parts = [TDARR_INPUT_DIR]
     input_subdir = route.get("input_subdir", "").strip()
     if input_subdir:
@@ -327,13 +376,17 @@ def _route_input_root(route: Dict[str, str], source: str) -> Path:
         dest = dest.joinpath(segment)
     return dest
 
+
 def build_relative_path(full_path: Path, base_dir: Path) -> Path:
     try:
         return full_path.resolve().relative_to(base_dir.resolve())
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         report_error_and_exit(f"Failed to relativize '{full_path}' to '{base_dir}'", e)
 
-def _format_copy_status(copied_bytes: int, total_bytes: int, mb_per_second: Optional[float]) -> str:
+
+def _format_copy_status(
+    copied_bytes: int, total_bytes: int, mb_per_second: float | None
+) -> str:
     total_mb = total_bytes / (1024 * 1024) if total_bytes > 0 else 0
     copied_mb = copied_bytes / (1024 * 1024)
     if mb_per_second is None:
@@ -346,7 +399,7 @@ def safe_copy_to_tdarr(
     dest_root: Path,
     base_dir: Path,
     dry_run=False,
-    progress_callback: Optional[Callable[[int, int, float], None]] = None,
+    progress_callback: Callable[[int, int, float], None] | None = None,
 ) -> Path:
     rel = build_relative_path(src, base_dir)
     dest = dest_root.joinpath(rel)
@@ -370,7 +423,9 @@ def safe_copy_to_tdarr(
             dest_handle.write(chunk)
             copied_bytes += len(chunk)
             now = time.monotonic()
-            if progress_callback and (now - last_emit >= 1 or copied_bytes >= total_bytes):
+            if progress_callback and (
+                now - last_emit >= 1 or copied_bytes >= total_bytes
+            ):
                 elapsed = max(now - started_at, 0.001)
                 mb_per_second = (copied_bytes / (1024 * 1024)) / elapsed
                 progress_callback(copied_bytes, total_bytes, mb_per_second)
@@ -378,6 +433,7 @@ def safe_copy_to_tdarr(
 
     shutil.copystat(str(src), str(dest))
     return dest
+
 
 def init_db():
     conn = sqlite3.connect(STATE_DB_FILE)
@@ -391,19 +447,24 @@ def init_db():
     conn.commit()
     return conn
 
+
 def is_processed(conn, file_path: str) -> bool:
     c = conn.cursor()
     c.execute("SELECT 1 FROM processed_files WHERE file_path = ?", (file_path,))
     return c.fetchone() is not None
 
+
 def mark_processed(conn, file_path: str):
     c = conn.cursor()
     now = int(time.time())
-    c.execute("INSERT OR REPLACE INTO processed_files (file_path, processed_at) VALUES (?, ?)", (file_path, now))
+    c.execute(
+        "INSERT OR REPLACE INTO processed_files (file_path, processed_at) VALUES (?, ?)",
+        (file_path, now),
+    )
     conn.commit()
 
 
-def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]]]]:
+def load_structured_selection_from_env() -> dict[int, set[int] | None] | None:
     raw = os.environ.get("TDARR_SYNC_SELECTION")
     if not raw:
         return None
@@ -415,10 +476,12 @@ def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]
         return None
 
     if not isinstance(payload, list):
-        logger.error("TDARR_SYNC_SELECTION must be a list of selections; ignoring value.")
+        logger.error(
+            "TDARR_SYNC_SELECTION must be a list of selections; ignoring value."
+        )
         return None
 
-    structured: Dict[int, Optional[Set[int]]] = {}
+    structured: dict[int, set[int] | None] = {}
     for item in payload:
         if not isinstance(item, dict):
             continue
@@ -438,7 +501,7 @@ def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]
         if not isinstance(seasons_raw, list):
             continue
 
-        normalized: Set[int] = set()
+        normalized: set[int] = set()
         for season in seasons_raw:
             try:
                 normalized.add(int(season))
@@ -457,16 +520,19 @@ def load_structured_selection_from_env() -> Optional[Dict[int, Optional[Set[int]
 
     logger.info(
         "Structured selection received via environment: %s",
-        {series_id: (sorted(seasons) if seasons is not None else None) for series_id, seasons in structured.items()},
+        {
+            series_id: (sorted(seasons) if seasons is not None else None)
+            for series_id, seasons in structured.items()
+        },
     )
     return structured
 
 
-def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bool]:
+def load_effective_routes() -> tuple[dict[str, object], list[dict[str, str]], bool]:
     runtime_settings = load_runtime_settings(RUNTIME_SETTINGS_FILE)
     configured_routes = runtime_settings.get("routes", [])
     if isinstance(configured_routes, list) and configured_routes:
-        routes: List[Dict[str, str]] = []
+        routes: list[dict[str, str]] = []
         for route in configured_routes:
             if isinstance(route, dict):
                 routes.append(route)
@@ -476,12 +542,14 @@ def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bo
             "Loaded %d active route rule(s) from %s%s",
             len(enabled_routes),
             RUNTIME_SETTINGS_FILE,
-            f" ({len(disabled_routes)} temporarily disabled)" if disabled_routes else "",
+            f" ({len(disabled_routes)} temporarily disabled)"
+            if disabled_routes
+            else "",
         )
         return runtime_settings, enabled_routes, False
 
     # Legacy fallback keeps existing behaviour if UI rules have not been configured yet.
-    fallback_routes: List[Dict[str, str]] = []
+    fallback_routes: list[dict[str, str]] = []
     if SONARR_TAG_NAME:
         fallback_routes.append(
             {
@@ -500,7 +568,9 @@ def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bo
                 "input_subdir": "",
             }
         )
-    enabled_fallback, disabled_fallback = _partition_routes_by_disabled_tag(fallback_routes)
+    enabled_fallback, disabled_fallback = _partition_routes_by_disabled_tag(
+        fallback_routes
+    )
     _log_disabled_routes(disabled_fallback, scope="legacy")
     if enabled_fallback:
         logger.info(
@@ -515,8 +585,10 @@ def load_effective_routes() -> Tuple[Dict[str, object], List[Dict[str, str]], bo
     return runtime_settings, enabled_fallback, True
 
 
-def _group_routes_by_source(routes: List[Dict[str, str]]) -> Dict[str, List[Dict[str, str]]]:
-    grouped: Dict[str, List[Dict[str, str]]] = {"sonarr": [], "radarr": []}
+def _group_routes_by_source(
+    routes: list[dict[str, str]],
+) -> dict[str, list[dict[str, str]]]:
+    grouped: dict[str, list[dict[str, str]]] = {"sonarr": [], "radarr": []}
     for route in routes:
         source = str(route.get("source", "")).lower()
         if source not in grouped:
@@ -533,6 +605,7 @@ def episode_season_number(episode: dict) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return 0
+
 
 # -------------------- Archive/Retention (AFTER restore only) --------------------
 def _compute_backup_target(original: Path) -> Path:
@@ -553,7 +626,8 @@ def _compute_backup_target(original: Path) -> Path:
         counter += 1
     return candidate
 
-def archive_original_before_restore(file_path: Path, library_base: Path) -> Optional[Path]:
+
+def archive_original_before_restore(file_path: Path, library_base: Path) -> Path | None:
     """
     If RENAME_ORIGINAL_FILES and destination exists, rename it with BACKUP_SUFFIX.
     If MOVE_ORIGINAL_FILES, move that backup into MOVE_ORIGINAL_FILES_DEST preserving path under library_base.
@@ -569,8 +643,10 @@ def archive_original_before_restore(file_path: Path, library_base: Path) -> Opti
     logger.info("ARCHIVE: rename original %s -> %s", file_path, backup_on_site)
     try:
         file_path.rename(backup_on_site)
-    except Exception as e:
-        report_error_and_exit(f"Failed to rename original '{file_path}' -> '{backup_on_site}'", e)
+    except OSError as e:
+        report_error_and_exit(
+            f"Failed to rename original '{file_path}' -> '{backup_on_site}'", e
+        )
 
     archived_path = backup_on_site
 
@@ -582,7 +658,7 @@ def archive_original_before_restore(file_path: Path, library_base: Path) -> Opti
             logger.info("ARCHIVE: move to archive %s -> %s", backup_on_site, dest)
             shutil.move(str(backup_on_site), str(dest))
             archived_path = dest
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.warning("ARCHIVE: move skipped (kept in place). Reason: %s", e)
             archived_path = backup_on_site
 
@@ -590,11 +666,14 @@ def archive_original_before_restore(file_path: Path, library_base: Path) -> Opti
         try:
             now = time.time()
             os.utime(archived_path, (now, now))
-            logger.info("ARCHIVE: touched %s to now for correct retention", archived_path)
-        except Exception as e:
+            logger.info(
+                "ARCHIVE: touched %s to now for correct retention", archived_path
+            )
+        except OSError as e:
             logger.warning("ARCHIVE: failed to touch %s: %s", archived_path, e)
 
     return archived_path
+
 
 def cleanup_old_originals():
     """
@@ -606,20 +685,30 @@ def cleanup_old_originals():
         _progress_total(0, action="skipped", message="Archive deletion is disabled.")
         return
     if not MOVE_ORIGINAL_FILES_DEST.exists() or not MOVE_ORIGINAL_FILES_DEST.is_dir():
-        logger.warning("SWEEP: archive dir %s missing; skipping sweep.", MOVE_ORIGINAL_FILES_DEST)
+        logger.warning(
+            "SWEEP: archive dir %s missing; skipping sweep.", MOVE_ORIGINAL_FILES_DEST
+        )
         _progress_total(0, action="skipped", message="Archive directory is missing.")
         return
 
     now = time.time()
-    cutoff = now - (DELETE_ORIGINAL_FILES_DAYS * 86400) if DELETE_ORIGINAL_FILES_DAYS > 0 else 0
+    cutoff = (
+        now - (DELETE_ORIGINAL_FILES_DAYS * 86400)
+        if DELETE_ORIGINAL_FILES_DAYS > 0
+        else 0
+    )
 
-    sweep_files: List[Path] = []
+    sweep_files: list[Path] = []
     for root, _, files in os.walk(MOVE_ORIGINAL_FILES_DEST):
         for fname in files:
             if fname.endswith(BACKUP_SUFFIX):
                 sweep_files.append(Path(root) / fname)
 
-    _progress_total(len(sweep_files), action="sweeping", message=f"Sweeping {len(sweep_files)} archived original(s).")
+    _progress_total(
+        len(sweep_files),
+        action="sweeping",
+        message=f"Sweeping {len(sweep_files)} archived original(s).",
+    )
     deleted = 0
     scanned = 0
     for fpath in sweep_files:
@@ -633,18 +722,19 @@ def cleanup_old_originals():
                 _progress_advance(action="deleted", path=fpath)
             else:
                 _progress_advance(action="kept", path=fpath, skipped=True)
-        except Exception as e:
+        except OSError as e:
             logger.warning("SWEEP: failed to handle %s: %s", fpath, e)
             _progress_advance(action="failed", path=fpath, message=str(e), failed=True)
     logger.info("SWEEP: scanned=%d, deleted=%d", scanned, deleted)
 
+
 # -------------------- Phases --------------------
 def _copy_sonarr_items(
     conn: sqlite3.Connection,
-    routes: List[Dict[str, str]],
+    routes: list[dict[str, str]],
     *,
     dry_run: bool,
-    selection: Optional[Dict[int, Optional[Set[int]]]],
+    selection: dict[int, set[int] | None] | None,
     legacy_mode: bool,
 ) -> None:
     _progress_begin("copy_sonarr", action="loading_routes")
@@ -654,27 +744,37 @@ def _copy_sonarr_items(
         return
 
     tag_lookup = get_tag_lookup("sonarr")
-    unknown_tags = sorted({route["tag"] for route in routes if route["tag"].lower() not in tag_lookup})
+    unknown_tags = sorted(
+        {route["tag"] for route in routes if route["tag"].lower() not in tag_lookup}
+    )
     if unknown_tags:
-        logger.warning("Sonarr routes contain unknown tag(s): %s", ", ".join(unknown_tags))
+        logger.warning(
+            "Sonarr routes contain unknown tag(s): %s", ", ".join(unknown_tags)
+        )
 
     try:
         series_list = sonarr_get("/series").json()
-    except Exception as exc:
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
         report_error_and_exit("Failed to get series from Sonarr", exc)
 
     if selection is not None:
         selected_ids = set(selection.keys())
         before = len(series_list)
-        series_list = [series for series in series_list if series.get("id") in selected_ids]
-        logger.info("Structured selection: %d -> %d Sonarr series", before, len(series_list))
+        series_list = [
+            series for series in series_list if series.get("id") in selected_ids
+        ]
+        logger.info(
+            "Structured selection: %d -> %d Sonarr series", before, len(series_list)
+        )
 
     if not series_list:
         logger.info("No Sonarr series found to process.")
-        _progress_total(0, action="skipped", message="No Sonarr series found to process.")
+        _progress_total(
+            0, action="skipped", message="No Sonarr series found to process."
+        )
         return
 
-    work_items: List[Dict[str, object]] = []
+    work_items: list[dict[str, object]] = []
     for series in series_list:
         try:
             series_id = int(series.get("id"))
@@ -707,7 +807,9 @@ def _copy_sonarr_items(
         for episode_file in get_episode_files_for_series(series_id):
             path = episode_file.get("path") or episode_file.get("relativePath")
             if not path:
-                logger.warning("Skipping Sonarr episode file with no path: %s", episode_file)
+                logger.warning(
+                    "Skipping Sonarr episode file with no path: %s", episode_file
+                )
                 continue
             if season_filter is not None:
                 season_number = episode_season_number(episode_file)
@@ -722,7 +824,11 @@ def _copy_sonarr_items(
                 }
             )
 
-    _progress_total(len(work_items), action="copying", message=f"Copying {len(work_items)} Sonarr file(s).")
+    _progress_total(
+        len(work_items),
+        action="copying",
+        message=f"Copying {len(work_items)} Sonarr file(s).",
+    )
 
     for item in work_items:
         title = str(item["title"])
@@ -731,7 +837,9 @@ def _copy_sonarr_items(
         if not isinstance(src, Path) or not isinstance(destination_root, Path):
             continue
         try:
-            planned_dest = destination_root.joinpath(src.resolve().relative_to(BASE_DIR.resolve()))
+            planned_dest = destination_root.joinpath(
+                src.resolve().relative_to(BASE_DIR.resolve())
+            )
         except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
@@ -771,13 +879,20 @@ def _copy_sonarr_items(
                 message=_format_copy_status(0, total_bytes, None),
             )
 
-            def report_copy_progress(copied_bytes: int, total: int, mb_per_second: float) -> None:
+            def report_copy_progress(
+                copied_bytes: int,
+                total: int,
+                mb_per_second: float,
+                current_title: str = title,
+                current_src: Path = src,
+                current_destination: Path | None = planned_dest,
+            ) -> None:
                 _progress_current(
                     action="copying",
                     source="sonarr",
-                    title=title,
-                    path=src,
-                    destination=planned_dest,
+                    title=current_title,
+                    path=current_src,
+                    destination=current_destination,
                     message=_format_copy_status(copied_bytes, total, mb_per_second),
                 )
 
@@ -790,8 +905,15 @@ def _copy_sonarr_items(
             )
             if not dry_run:
                 mark_processed(conn, src_resolved)
-            _progress_advance(action="copied", source="sonarr", title=title, path=src, destination=dest, message="Copy complete")
-        except Exception as exc:
+            _progress_advance(
+                action="copied",
+                source="sonarr",
+                title=title,
+                path=src,
+                destination=dest,
+                message="Copy complete",
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
             _progress_advance(
                 action="failed",
                 source="sonarr",
@@ -804,7 +926,7 @@ def _copy_sonarr_items(
             report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
 
 
-def _extract_radarr_movie_file_path(movie: Dict) -> Optional[str]:
+def _extract_radarr_movie_file_path(movie: dict) -> str | None:
     movie_file = movie.get("movieFile")
     if isinstance(movie_file, dict):
         path = movie_file.get("path")
@@ -821,8 +943,10 @@ def _extract_radarr_movie_file_path(movie: Dict) -> Optional[str]:
 
     try:
         movie_files = radarr_get("/moviefile", params={"movieId": movie_id}).json()
-    except Exception as exc:
-        logger.warning("Failed fetching Radarr movie file for movie id=%s: %s", movie_id, exc)
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "Failed fetching Radarr movie file for movie id=%s: %s", movie_id, exc
+        )
         return None
 
     if isinstance(movie_files, list):
@@ -837,7 +961,7 @@ def _extract_radarr_movie_file_path(movie: Dict) -> Optional[str]:
 
 def _copy_radarr_items(
     conn: sqlite3.Connection,
-    routes: List[Dict[str, str]],
+    routes: list[dict[str, str]],
     *,
     dry_run: bool,
     legacy_mode: bool,
@@ -848,26 +972,34 @@ def _copy_radarr_items(
         _progress_total(0, action="skipped", message="No Radarr routes configured.")
         return
     if not RADARR_URL or not RADARR_API_KEY:
-        logger.warning("Radarr routes exist but RADARR_URL/RADARR_API_KEY are not configured; skipping Radarr copy.")
+        logger.warning(
+            "Radarr routes exist but RADARR_URL/RADARR_API_KEY are not configured; skipping Radarr copy."
+        )
         _progress_total(0, action="skipped", message="Radarr is not configured.")
         return
 
     tag_lookup = get_tag_lookup("radarr")
-    unknown_tags = sorted({route["tag"] for route in routes if route["tag"].lower() not in tag_lookup})
+    unknown_tags = sorted(
+        {route["tag"] for route in routes if route["tag"].lower() not in tag_lookup}
+    )
     if unknown_tags:
-        logger.warning("Radarr routes contain unknown tag(s): %s", ", ".join(unknown_tags))
+        logger.warning(
+            "Radarr routes contain unknown tag(s): %s", ", ".join(unknown_tags)
+        )
 
     try:
         movies = radarr_get("/movie").json()
-    except Exception as exc:
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
         report_error_and_exit("Failed to get movies from Radarr", exc)
 
     if not movies:
         logger.info("No Radarr movies found to process.")
-        _progress_total(0, action="skipped", message="No Radarr movies found to process.")
+        _progress_total(
+            0, action="skipped", message="No Radarr movies found to process."
+        )
         return
 
-    work_items: List[Dict[str, object]] = []
+    work_items: list[dict[str, object]] = []
     for movie in movies:
         item_tag_ids = _normalize_tag_ids(movie.get("tags"))
         route = _find_route_for_item(item_tag_ids, routes, tag_lookup)
@@ -876,7 +1008,9 @@ def _copy_radarr_items(
 
         path = _extract_radarr_movie_file_path(movie)
         if not path:
-            logger.warning("Skipping Radarr movie with no file path: %s", movie.get("title"))
+            logger.warning(
+                "Skipping Radarr movie with no file path: %s", movie.get("title")
+            )
             continue
 
         src = translate_radarr_path(path)
@@ -900,7 +1034,11 @@ def _copy_radarr_items(
             }
         )
 
-    _progress_total(len(work_items), action="copying", message=f"Copying {len(work_items)} Radarr file(s).")
+    _progress_total(
+        len(work_items),
+        action="copying",
+        message=f"Copying {len(work_items)} Radarr file(s).",
+    )
 
     for item in work_items:
         title = str(item["title"])
@@ -909,7 +1047,9 @@ def _copy_radarr_items(
         if not isinstance(src, Path) or not isinstance(destination_root, Path):
             continue
         try:
-            planned_dest = destination_root.joinpath(src.resolve().relative_to(RADARR_LOCAL_MOUNT_BASE_PATH.resolve()))
+            planned_dest = destination_root.joinpath(
+                src.resolve().relative_to(RADARR_LOCAL_MOUNT_BASE_PATH.resolve())
+            )
         except (OSError, RuntimeError, ValueError):
             planned_dest = None
 
@@ -949,13 +1089,20 @@ def _copy_radarr_items(
                 message=_format_copy_status(0, total_bytes, None),
             )
 
-            def report_copy_progress(copied_bytes: int, total: int, mb_per_second: float) -> None:
+            def report_copy_progress(
+                copied_bytes: int,
+                total: int,
+                mb_per_second: float,
+                current_title: str = title,
+                current_src: Path = src,
+                current_destination: Path | None = planned_dest,
+            ) -> None:
                 _progress_current(
                     action="copying",
                     source="radarr",
-                    title=title,
-                    path=src,
-                    destination=planned_dest,
+                    title=current_title,
+                    path=current_src,
+                    destination=current_destination,
                     message=_format_copy_status(copied_bytes, total, mb_per_second),
                 )
 
@@ -968,8 +1115,15 @@ def _copy_radarr_items(
             )
             if not dry_run:
                 mark_processed(conn, src_resolved)
-            _progress_advance(action="copied", source="radarr", title=title, path=src, destination=dest, message="Copy complete")
-        except Exception as exc:
+            _progress_advance(
+                action="copied",
+                source="radarr",
+                title=title,
+                path=src,
+                destination=dest,
+                message="Copy complete",
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
             _progress_advance(
                 action="failed",
                 source="radarr",
@@ -982,7 +1136,9 @@ def _copy_radarr_items(
             report_error_and_exit(f"Copy failed {src} -> {destination_root}", exc)
 
 
-def process_media_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional[Set[int]]]] = None):
+def process_media_to_tdarr(
+    dry_run=False, selection: dict[int, set[int] | None] | None = None
+):
     _progress_begin("copy_sonarr", action="loading_routes")
     _, routes, legacy_mode = load_effective_routes()
     if not routes:
@@ -993,15 +1149,29 @@ def process_media_to_tdarr(dry_run=False, selection: Optional[Dict[int, Optional
     grouped_routes = _group_routes_by_source(routes)
     conn = init_db()
     try:
-        _copy_sonarr_items(conn, grouped_routes["sonarr"], dry_run=dry_run, selection=selection, legacy_mode=legacy_mode)
-        _copy_radarr_items(conn, grouped_routes["radarr"], dry_run=dry_run, legacy_mode=legacy_mode)
+        _copy_sonarr_items(
+            conn,
+            grouped_routes["sonarr"],
+            dry_run=dry_run,
+            selection=selection,
+            legacy_mode=legacy_mode,
+        )
+        _copy_radarr_items(
+            conn, grouped_routes["radarr"], dry_run=dry_run, legacy_mode=legacy_mode
+        )
     finally:
         conn.close()
 
 
-def _resolve_restore_destination(rel_path: Path, routes: List[Dict[str, str]]) -> Tuple[Path, Path]:
+def _resolve_restore_destination(
+    rel_path: Path, routes: list[dict[str, str]]
+) -> tuple[Path, Path]:
     prefix_to_source = {prefix: source for source, prefix in SOURCE_PREFIXES.items()}
-    flow_subdirs = {str(route.get("input_subdir", "")).strip() for route in routes if route.get("input_subdir")}
+    flow_subdirs = {
+        str(route.get("input_subdir", "")).strip()
+        for route in routes
+        if route.get("input_subdir")
+    }
     parts = rel_path.parts
 
     if len(parts) >= 2 and parts[0] in flow_subdirs and parts[1] in prefix_to_source:
@@ -1022,7 +1192,9 @@ def move_tdarr_output_back(dry_run=False):
     _progress_begin("restore_outputs", action="scanning")
     if not TDARR_OUTPUT_DIR.exists():
         logger.info("Tdarr output dir does not exist: %s", TDARR_OUTPUT_DIR)
-        _progress_total(0, action="skipped", message="Tdarr output directory does not exist.")
+        _progress_total(
+            0, action="skipped", message="Tdarr output directory does not exist."
+        )
         return
 
     runtime_settings, routes, _ = load_effective_routes()
@@ -1034,23 +1206,37 @@ def move_tdarr_output_back(dry_run=False):
         )
     logger.info("RESTORE: scanning %s", TDARR_OUTPUT_DIR)
     output_files = [path for path in TDARR_OUTPUT_DIR.rglob("*") if not path.is_dir()]
-    _progress_total(len(output_files), action="restoring", message=f"Restoring {len(output_files)} output file(s).")
+    _progress_total(
+        len(output_files),
+        action="restoring",
+        message=f"Restoring {len(output_files)} output file(s).",
+    )
     for out_path in output_files:
         try:
             rel = out_path.relative_to(TDARR_OUTPUT_DIR)
         except ValueError:
             logger.warning("RESTORE: unexpected file outside output dir: %s", out_path)
-            _progress_advance(action="skipped_outside_output", path=out_path, skipped=True)
+            _progress_advance(
+                action="skipped_outside_output", path=out_path, skipped=True
+            )
             continue
         if rel.parts and rel.parts[0] in disabled_input_subdirs:
-            logger.info("RESTORE: skip output under disabled-tag subdir %s: %s", rel.parts[0], out_path)
-            _progress_advance(action="skipped_disabled_route", path=out_path, skipped=True)
+            logger.info(
+                "RESTORE: skip output under disabled-tag subdir %s: %s",
+                rel.parts[0],
+                out_path,
+            )
+            _progress_advance(
+                action="skipped_disabled_route", path=out_path, skipped=True
+            )
             continue
 
         library_base, relative_to_library = _resolve_restore_destination(rel, routes)
         if str(relative_to_library) in {"", "."}:
             logger.warning("RESTORE: skipped malformed output path %s", out_path)
-            _progress_advance(action="skipped_malformed_path", path=out_path, skipped=True)
+            _progress_advance(
+                action="skipped_malformed_path", path=out_path, skipped=True
+            )
             continue
         dest = library_base.joinpath(relative_to_library)
         if dry_run:
@@ -1068,14 +1254,23 @@ def move_tdarr_output_back(dry_run=False):
         try:
             shutil.move(str(out_path), str(dest))
             _progress_advance(action="restored", path=out_path, destination=dest)
-        except Exception as e:
-            _progress_advance(action="failed", path=out_path, destination=dest, message=str(e), failed=True)
-            report_error_and_exit(f"Failed to move restored file {out_path} -> {dest}", e)
+        except OSError as e:
+            _progress_advance(
+                action="failed",
+                path=out_path,
+                destination=dest,
+                message=str(e),
+                failed=True,
+            )
+            report_error_and_exit(
+                f"Failed to move restored file {out_path} -> {dest}", e
+            )
+
 
 # -------------------- Interactive Picker --------------------
-def _load_processed_cache() -> Dict[str, int]:
+def _load_processed_cache() -> dict[str, int]:
     """Return {abs_path: processed_at} from SQLite."""
-    cache: Dict[str, int] = {}
+    cache: dict[str, int] = {}
     if not STATE_DB_FILE.exists():
         return cache
     conn = sqlite3.connect(STATE_DB_FILE)
@@ -1088,13 +1283,16 @@ def _load_processed_cache() -> Dict[str, int]:
         conn.close()
     return cache
 
-def _series_status(series: Dict, processed_cache: Dict[str, int]) -> Tuple[int, int, Optional[int]]:
+
+def _series_status(
+    series: dict, processed_cache: dict[str, int]
+) -> tuple[int, int, int | None]:
     """Return (processed_count, total, last_ts) for a series."""
     series_id = series.get("id")
     eps = get_episode_files_for_series(series_id)
     total = 0
     processed = 0
-    last_ts: Optional[int] = None
+    last_ts: int | None = None
     for ef in eps:
         path = ef.get("path") or ef.get("relativePath")
         if not path:
@@ -1111,6 +1309,7 @@ def _series_status(series: Dict, processed_cache: Dict[str, int]) -> Tuple[int, 
                 last_ts = ts
     return processed, total, last_ts
 
+
 def _status_rank(processed: int, total: int) -> int:
     """0 = unprocessed, 1 = partial, 2 = full"""
     if processed <= 0:
@@ -1119,7 +1318,12 @@ def _status_rank(processed: int, total: int) -> int:
         return 1
     return 2
 
-def _print_series_menu(series_list: List[Dict], processed_cache: Dict[str, int], filter_term: Optional[str] = None):
+
+def _print_series_menu(
+    series_list: list[dict],
+    processed_cache: dict[str, int],
+    filter_term: str | None = None,
+):
     print("\nLegend: ✓ fully processed   ◐ partially processed   ○ not processed")
     # apply filter (case-insensitive substring match on title)
     if filter_term:
@@ -1152,12 +1356,13 @@ def _print_series_menu(series_list: List[Dict], processed_cache: Dict[str, int],
     # Return the same decorated list so caller can map indexes back to IDs
     return decorated
 
-def _parse_selection(expr: str, max_index: int) -> List[int]:
+
+def _parse_selection(expr: str, max_index: int) -> list[int]:
     """Parse '1,3,5-7' or 'all' → list of 1-based indexes."""
     expr = (expr or "").strip().lower()
     if expr in ("all", "a", "*"):
         return list(range(1, max_index + 1))
-    selection: List[int] = []
+    selection: list[int] = []
     for part in expr.split(","):
         part = part.strip()
         if not part:
@@ -1185,16 +1390,18 @@ def _parse_selection(expr: str, max_index: int) -> List[int]:
             result.append(i)
     return result
 
-def interactive_select_series() -> List[int]:
+
+def interactive_select_series() -> list[int]:
     """Fetch series list, show status-aware menu, prompt user, and return selected series IDs."""
     import sys as _sys
+
     if not _sys.stdin.isatty():
         print("--interactive requested but no TTY is attached; aborting.")
         raise SystemExit(2)
 
     try:
         series_all = sonarr_get("/series").json()
-    except Exception as exc:
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
         report_error_and_exit("Failed to get series from Sonarr", exc)
 
     _, routes, _ = load_effective_routes()
@@ -1213,7 +1420,7 @@ def interactive_select_series() -> List[int]:
         return []
 
     processed_cache = _load_processed_cache()
-    filter_term: Optional[str] = None
+    filter_term: str | None = None
 
     while True:
         decorated = _print_series_menu(series_all, processed_cache, filter_term)
@@ -1249,19 +1456,32 @@ def interactive_select_series() -> List[int]:
             continue
 
         selected_ids = [decorated[i - 1][0].get("id") for i in sel_idx]
-        names = ", ".join((decorated[i - 1][0].get("title") or str(decorated[i - 1][0].get("id"))) for i in sel_idx)
+        names = ", ".join(
+            (decorated[i - 1][0].get("title") or str(decorated[i - 1][0].get("id")))
+            for i in sel_idx
+        )
         confirm = input(f"Proceed with: {names}? (y/N): ").strip().lower()
         if confirm == "y":
             return selected_ids
         print("Cancelled. Starting over...\n")
 
+
 # -------------------- CLI --------------------
 def parse_args():
-    p = argparse.ArgumentParser(description="Sync tagged media to Tdarr and restore outputs.")
-    p.add_argument("--dry-run", action="store_true", help="Log intended actions without writing.")
+    p = argparse.ArgumentParser(
+        description="Sync tagged media to Tdarr and restore outputs."
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", help="Log intended actions without writing."
+    )
     p.add_argument("--skip-restore", action="store_true", help="Skip restore phase.")
-    p.add_argument("--interactive", action="store_true", help="Prompt to select which series to process before copying.")
+    p.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Prompt to select which series to process before copying.",
+    )
     return p.parse_args()
+
 
 def main():
     global PROGRESS
@@ -1272,10 +1492,16 @@ def main():
     # CLI flag enables interactive; otherwise fall back to .env default
     use_interactive = args.interactive or ENV_INTERACTIVE
     if use_interactive and not sys.stdin.isatty():
-        logger.warning("Interactive mode requested but no TTY detected; continuing without prompts.")
+        logger.warning(
+            "Interactive mode requested but no TTY detected; continuing without prompts."
+        )
         use_interactive = False
 
-    logger.info("Starting tdarr_sync (dry_run=%s, interactive=%s)", args.dry_run, use_interactive)
+    logger.info(
+        "Starting tdarr_sync (dry_run=%s, interactive=%s)",
+        args.dry_run,
+        use_interactive,
+    )
     try:
         selection = load_structured_selection_from_env()
         if selection is None and use_interactive:
@@ -1292,13 +1518,14 @@ def main():
         if PROGRESS:
             PROGRESS.finish("failed", error="Sync exited before completion.")
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level process boundary
         if PROGRESS:
             PROGRESS.finish("failed", error=str(e))
         report_error_and_exit("Unhandled error in main()", e)
     if PROGRESS:
         PROGRESS.finish("succeeded", message="Finished tdarr_sync run.")
     logger.info("Finished tdarr_sync run.")
+
 
 if __name__ == "__main__":
     main()

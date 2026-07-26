@@ -4,20 +4,18 @@ import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List
-
-from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from logging.handlers import WatchedFileHandler
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+
+from runtime_settings import load_runtime_settings, save_runtime_settings
+from sync_progress import read_progress_file
 
 from . import db, schemas
 from .build_version import resolve_build_version
-from .settings import settings
-from .sync_runner import SyncAlreadyRunningError, SyncRunner
-from .tdarr_client import fetch_tdarr_status
-from sync_progress import read_progress_file
-from runtime_settings import load_runtime_settings, save_runtime_settings
+from .restore_jobs import RestoreJobConflictError, RestoreJobManager
 from .restore_service import (
     RestoreAuthError,
     RestoreConfigurationError,
@@ -26,7 +24,9 @@ from .restore_service import (
     RestoreSelectionError,
     RestoreService,
 )
-from .restore_jobs import RestoreJobManager, RestoreJobConflictError
+from .settings import settings
+from .sync_runner import SyncAlreadyRunningError, SyncRunner
+from .tdarr_client import fetch_tdarr_status
 
 
 class TZFormatter(logging.Formatter):
@@ -47,7 +47,9 @@ logger = logging.getLogger("tdarr_sync.api")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    formatter = TZFormatter("%(asctime)s %(levelname)s [API] %(message)s", settings.zoneinfo)
+    formatter = TZFormatter(
+        "%(asctime)s %(levelname)s [API] %(message)s", settings.zoneinfo
+    )
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
@@ -64,7 +66,9 @@ async def lifespan(_app: FastAPI):
     logger.info("Tdarr Sync API started")
     logger.info("Database file: %s", settings.state_db_file)
     if not settings.state_db_file.exists():
-        logger.warning("State DB not found yet; run will create %s", settings.state_db_file)
+        logger.warning(
+            "State DB not found yet; run will create %s", settings.state_db_file
+        )
     yield
 
 
@@ -88,7 +92,11 @@ async def require_bearer_auth(request: Request, call_next):
 
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token or not secrets.compare_digest(token.strip(), API_AUTH_TOKEN):
+    if (
+        scheme.lower() != "bearer"
+        or not token
+        or not secrets.compare_digest(token.strip(), API_AUTH_TOKEN)
+    ):
         return JSONResponse(
             {"detail": "Unauthorized"},
             status_code=401,
@@ -97,7 +105,12 @@ async def require_bearer_auth(request: Request, call_next):
 
     return await call_next(request)
 
-runner = SyncRunner(settings.sync_script_path, settings.sync_python_executable, settings.sync_progress_file)
+
+runner = SyncRunner(
+    settings.sync_script_path,
+    settings.sync_python_executable,
+    settings.sync_progress_file,
+)
 
 try:
     restore_service = RestoreService()
@@ -157,14 +170,16 @@ def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
     body["tdarr_api_key"] = submitted_api_key or existing.get("tdarr_api_key", "")
     try:
         saved = save_runtime_settings(body, settings.runtime_settings_file)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
     return _routing_settings_response(saved)
 
 
-@app.get("/processed-files", response_model=List[schemas.ProcessedFile])
-def list_processed_files(limit: int = Query(default=50, le=500, gt=0), offset: int = Query(default=0, ge=0)):
+@app.get("/processed-files", response_model=list[schemas.ProcessedFile])
+def list_processed_files(
+    limit: int = Query(default=50, le=500, gt=0), offset: int = Query(default=0, ge=0)
+):
     rows = db.fetch_processed_files(settings.state_db_file, limit=limit, offset=offset)
     tz = settings.zoneinfo
     response = []
@@ -196,7 +211,9 @@ def processed_files_catalog():
             seasons.append(
                 {
                     **season,
-                    "last_processed_at_iso": schemas.to_iso(season.get("last_processed_at"), tz),
+                    "last_processed_at_iso": schemas.to_iso(
+                        season.get("last_processed_at"), tz
+                    ),
                     "files": [enrich_file(item) for item in season.get("files", [])],
                 }
             )
@@ -215,7 +232,7 @@ def processed_files_catalog():
     )
 
 
-@app.get("/processed-files/records", response_model=List[schemas.ProcessedDatabaseFile])
+@app.get("/processed-files/records", response_model=list[schemas.ProcessedDatabaseFile])
 def processed_file_records(
     category: str = Query(..., pattern="^(tv|movies|folders)$"),
     group_id: str = Query(..., min_length=1),
@@ -239,21 +256,33 @@ def processed_file_records(
     ]
 
 
-@app.post("/processed-files/delete", response_model=schemas.ProcessedFileBulkDeleteResponse)
+@app.post(
+    "/processed-files/delete", response_model=schemas.ProcessedFileBulkDeleteResponse
+)
 def delete_processed_file_markers(payload: schemas.ProcessedFileDeleteRequest):
     paths = [path for path in payload.file_paths if path]
     if not paths:
-        raise HTTPException(status_code=400, detail="At least one database record must be selected.")
+        raise HTTPException(
+            status_code=400, detail="At least one database record must be selected."
+        )
 
     deleted_count = db.delete_processed_entries(settings.state_db_file, paths)
-    logger.info("Deleted %d processed marker(s) from %d requested path(s).", deleted_count, len(paths))
-    return schemas.ProcessedFileBulkDeleteResponse(requested_count=len(paths), deleted_count=deleted_count)
+    logger.info(
+        "Deleted %d processed marker(s) from %d requested path(s).",
+        deleted_count,
+        len(paths),
+    )
+    return schemas.ProcessedFileBulkDeleteResponse(
+        requested_count=len(paths), deleted_count=deleted_count
+    )
 
 
 @app.delete("/processed-files", response_model=schemas.ProcessedFileDeleteResponse)
 def delete_processed_file_marker(file_path: str = Query(..., min_length=1)):
     deleted_count = db.delete_processed_entries(settings.state_db_file, [file_path])
-    logger.info("Deleted processed marker for %s (deleted=%d)", file_path, deleted_count)
+    logger.info(
+        "Deleted processed marker for %s (deleted=%d)", file_path, deleted_count
+    )
     return schemas.ProcessedFileDeleteResponse(
         deleted=deleted_count > 0,
         deleted_count=deleted_count,
@@ -300,7 +329,7 @@ def sync_status():
 
 
 @app.post("/sync/run", response_model=schemas.SyncTriggerResponse)
-def trigger_sync(dry_run: bool = False, payload: schemas.SyncRunRequest | None = Body(default=None)):
+def trigger_sync(dry_run: bool = False, payload: schemas.SyncRunRequest | None = None):
     request = payload or schemas.SyncRunRequest()
     structured = None
     if request.selections:
@@ -308,7 +337,9 @@ def trigger_sync(dry_run: bool = False, payload: schemas.SyncRunRequest | None =
         for item in request.selections:
             seasons = None
             if item.seasons is not None:
-                seasons = [int(season) for season in item.seasons if isinstance(season, int)]
+                seasons = [
+                    int(season) for season in item.seasons if isinstance(season, int)
+                ]
             structured.append({"series_id": int(item.series_id), "seasons": seasons})
 
     effective_dry_run = bool(dry_run or request.dry_run)
@@ -322,7 +353,9 @@ def trigger_sync(dry_run: bool = False, payload: schemas.SyncRunRequest | None =
 @app.get("/restore/series", response_model=schemas.RestoreSeriesList)
 def list_restore_series():
     if restore_service is None:
-        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+        raise HTTPException(
+            status_code=503, detail="Restore service is not configured."
+        )
 
     try:
         entries = restore_service.series_catalog()
@@ -380,17 +413,23 @@ def _outcome_to_response(outcome) -> schemas.RestoreResponse:
         )
         for result in outcome.results
     ]
-    return schemas.RestoreResponse(summary=summary, results=results, messages=outcome.messages)
+    return schemas.RestoreResponse(
+        summary=summary, results=results, messages=outcome.messages
+    )
 
 
 @app.post("/restore/run", response_model=schemas.RestoreRunResponse)
 def run_restore(payload: schemas.RestoreRequest):
     if restore_service is None:
-        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+        raise HTTPException(
+            status_code=503, detail="Restore service is not configured."
+        )
 
     status = runner.status()
     if status.get("running"):
-        raise HTTPException(status_code=409, detail="Sync is currently running; wait for it to finish.")
+        raise HTTPException(
+            status_code=409, detail="Sync is currently running; wait for it to finish."
+        )
 
     request_id = payload.request_id or str(uuid.uuid4())
     logger.info(
@@ -402,7 +441,10 @@ def run_restore(payload: schemas.RestoreRequest):
 
     structured = None
     if payload.selections:
-        structured = [{"series_id": item.series_id, "seasons": item.seasons} for item in payload.selections]
+        structured = [
+            {"series_id": item.series_id, "seasons": item.seasons}
+            for item in payload.selections
+        ]
 
     wait_for_completion = bool(payload.wait_for_completion)
 
@@ -431,11 +473,15 @@ def run_restore(payload: schemas.RestoreRequest):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # pragma: no cover
             logger.exception("Restore run failed with unexpected error")
-            raise HTTPException(status_code=500, detail="Restore failed due to an unexpected error.") from exc
+            raise HTTPException(
+                status_code=500, detail="Restore failed due to an unexpected error."
+            ) from exc
         return _outcome_to_response(outcome)
 
     if restore_jobs is None:
-        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+        raise HTTPException(
+            status_code=503, detail="Restore service is not configured."
+        )
 
     try:
         job = restore_jobs.submit(
@@ -456,14 +502,20 @@ def run_restore(payload: schemas.RestoreRequest):
     except RestoreError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    logger.info("Restore job submitted (request_id=%s, job_id=%s)", request_id, job.job_id)
-    return schemas.RestoreTriggerResponse(job_id=job.job_id, request_id=job.request_id, status="submitted")
+    logger.info(
+        "Restore job submitted (request_id=%s, job_id=%s)", request_id, job.job_id
+    )
+    return schemas.RestoreTriggerResponse(
+        job_id=job.job_id, request_id=job.request_id, status="submitted"
+    )
 
 
 @app.get("/restore/jobs/{job_id}", response_model=schemas.RestoreJobStatus)
 def get_restore_job(job_id: str):
     if restore_jobs is None:
-        raise HTTPException(status_code=503, detail="Restore service is not configured.")
+        raise HTTPException(
+            status_code=503, detail="Restore service is not configured."
+        )
     try:
         status = restore_jobs.get(job_id)
     except KeyError:

@@ -9,11 +9,13 @@ TEST_TMP.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("STATE_DB_FILE", str(TEST_TMP / "state.db"))
 os.environ.setdefault("LOG_FILE", str(TEST_TMP / "tdarr_sync.log"))
 
+
 def _ensure_pydantic():
     try:
         import pydantic  # noqa: F401
+
         return
-    except Exception:
+    except ImportError:
         pass
 
     stub = types.ModuleType("pydantic")

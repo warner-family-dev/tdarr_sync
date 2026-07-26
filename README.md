@@ -67,8 +67,11 @@ Set these first:
 TZ=America/Chicago
 PUID=1000
 PGID=1000
+IMAGE_TAG=latest
 API_AUTH_TOKEN=replace-with-a-long-random-token
 ```
+
+`IMAGE_TAG` controls both the image pulled by Compose and the version label shown in the dashboard. For example, `IMAGE_TAG=latest` displays `latest (<image-publish-date>)`, while `IMAGE_TAG=v2.3.4` displays `v2.3.4 (<image-publish-date>)`.
 
 Set host mounts:
 
@@ -319,7 +322,7 @@ Back up the host folders behind `TDARR_SYNC_CONFIG_DIR` and `TDARR_SYNC_LOG_DIR`
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
 | `/health` | GET | Liveness check. |
-| `/version` | GET | Git/version metadata for the dashboard header. |
+| `/version` | GET | Image/version metadata for the dashboard header. |
 | `/config` | GET | Sanitized runtime configuration. |
 | `/metrics/summary` | GET | Processed-file counts and DB metadata. |
 | `/processed-files` | GET | Recent processed files. |

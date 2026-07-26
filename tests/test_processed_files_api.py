@@ -12,9 +12,14 @@ def _auth_headers():
 
 def _create_processed_db(db_path, rows=None):
     with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE processed_files (file_path TEXT PRIMARY KEY, processed_at INTEGER)")
+        conn.execute(
+            "CREATE TABLE processed_files (file_path TEXT PRIMARY KEY, processed_at INTEGER)"
+        )
         for file_path, processed_at in rows or []:
-            conn.execute("INSERT INTO processed_files (file_path, processed_at) VALUES (?, ?)", (file_path, processed_at))
+            conn.execute(
+                "INSERT INTO processed_files (file_path, processed_at) VALUES (?, ?)",
+                (file_path, processed_at),
+            )
         conn.commit()
 
 
@@ -26,10 +31,16 @@ def test_delete_processed_file_marker_removes_matching_row(tmp_path, monkeypatch
     monkeypatch.setattr(settings, "state_db_file", db_path)
     client = TestClient(app)
 
-    response = client.delete("/processed-files", params={"file_path": file_path}, headers=_auth_headers())
+    response = client.delete(
+        "/processed-files", params={"file_path": file_path}, headers=_auth_headers()
+    )
 
     assert response.status_code == 200
-    assert response.json() == {"deleted": True, "deleted_count": 1, "file_path": file_path}
+    assert response.json() == {
+        "deleted": True,
+        "deleted_count": 1,
+        "file_path": file_path,
+    }
     with sqlite3.connect(db_path) as conn:
         remaining = conn.execute("SELECT COUNT(*) FROM processed_files").fetchone()[0]
     assert remaining == 0
@@ -42,10 +53,18 @@ def test_delete_processed_file_marker_reports_missing_row(tmp_path, monkeypatch)
     monkeypatch.setattr(settings, "state_db_file", db_path)
     client = TestClient(app)
 
-    response = client.delete("/processed-files", params={"file_path": "/missing.mkv"}, headers=_auth_headers())
+    response = client.delete(
+        "/processed-files",
+        params={"file_path": "/missing.mkv"},
+        headers=_auth_headers(),
+    )
 
     assert response.status_code == 200
-    assert response.json() == {"deleted": False, "deleted_count": 0, "file_path": "/missing.mkv"}
+    assert response.json() == {
+        "deleted": False,
+        "deleted_count": 0,
+        "file_path": "/missing.mkv",
+    }
 
 
 def test_processed_files_catalog_groups_tv_and_movies(tmp_path, monkeypatch):
@@ -95,7 +114,9 @@ def test_processed_files_catalog_groups_tv_and_movies(tmp_path, monkeypatch):
     assert movie_response.json()[0]["file_path"] == movie_file
 
 
-def test_bulk_delete_processed_file_markers_removes_selected_rows(tmp_path, monkeypatch):
+def test_bulk_delete_processed_file_markers_removes_selected_rows(
+    tmp_path, monkeypatch
+):
     db_path = tmp_path / "state.db"
     first = "/media/library/Example Show/Season 01/Example.Show.S01E01.mkv"
     second = "/media/library/Example Show/Season 01/Example.Show.S01E02.mkv"
@@ -114,5 +135,7 @@ def test_bulk_delete_processed_file_markers_removes_selected_rows(tmp_path, monk
     assert response.status_code == 200
     assert response.json() == {"requested_count": 2, "deleted_count": 2}
     with sqlite3.connect(db_path) as conn:
-        rows = conn.execute("SELECT file_path FROM processed_files ORDER BY file_path").fetchall()
+        rows = conn.execute(
+            "SELECT file_path FROM processed_files ORDER BY file_path"
+        ).fetchall()
     assert [row[0] for row in rows] == [third]

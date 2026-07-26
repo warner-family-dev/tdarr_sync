@@ -40,7 +40,9 @@ logger = logging.getLogger("tdarr_sync.worker")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    formatter = _TZFormatter("%(asctime)s %(levelname)s [WORKER] %(message)s", _current_zone())
+    formatter = _TZFormatter(
+        "%(asctime)s %(levelname)s [WORKER] %(message)s", _current_zone()
+    )
     _console_handler = logging.StreamHandler()
     _console_handler.setFormatter(formatter)
     logger.addHandler(_console_handler)
@@ -75,7 +77,9 @@ def run_sync(dry_run: bool = False) -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Tdarr Sync once.")
-    parser.add_argument("--dry-run", action="store_true", help="Run Tdarr Sync in dry-run mode.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Run Tdarr Sync in dry-run mode."
+    )
     return parser.parse_args()
 
 
