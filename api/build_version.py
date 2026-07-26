@@ -11,7 +11,7 @@ def _read_ref_sha(git_dir: Path, ref: str) -> str:
     if ref_path.exists():
         try:
             return ref_path.read_text(encoding="utf-8").strip()
-        except Exception:
+        except (OSError, UnicodeError):
             return ""
 
     packed_refs = git_dir / "packed-refs"
@@ -20,12 +20,12 @@ def _read_ref_sha(git_dir: Path, ref: str) -> str:
 
     try:
         lines = packed_refs.read_text(encoding="utf-8").splitlines()
-    except Exception:
+    except (OSError, UnicodeError):
         return ""
 
     for line in lines:
         entry = line.strip()
-        if not entry or entry.startswith("#") or entry.startswith("^"):
+        if not entry or entry.startswith(("#", "^")):
             continue
         try:
             sha, name = entry.split(" ", 1)
@@ -42,8 +42,12 @@ def _read_commit_date_from_git_log(git_dir: Path) -> str:
         return ""
 
     try:
-        lines = [line.strip() for line in log_head.read_text(encoding="utf-8").splitlines() if line.strip()]
-    except Exception:
+        lines = [
+            line.strip()
+            for line in log_head.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, UnicodeError):
         return ""
 
     if not lines:
@@ -72,7 +76,7 @@ def _resolve_build_version_from_git_files(repo_root: Path) -> dict | None:
 
     try:
         head = head_path.read_text(encoding="utf-8").strip()
-    except Exception:
+    except (OSError, UnicodeError):
         return None
 
     if not head:
@@ -124,7 +128,7 @@ def _resolve_build_version_from_git_command(repo_root: Path) -> dict | None:
             "commit_sha": _run_git(["rev-parse", "--short", "HEAD"]),
             "source": "git",
         }
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
 
 
@@ -165,9 +169,9 @@ def resolve_build_version(repo_root: Path | None = None) -> dict:
     env_sha = image_sha or _clean_env("APP_GIT_COMMIT_SHA")
 
     current_repo_root = repo_root or Path(__file__).resolve().parents[1]
-    git_data = _resolve_build_version_from_git_command(current_repo_root) or _resolve_build_version_from_git_files(
+    git_data = _resolve_build_version_from_git_command(
         current_repo_root
-    )
+    ) or _resolve_build_version_from_git_files(current_repo_root)
     if image_tag or image_published_date:
         return _build_version_payload(
             image_tag=image_tag,
@@ -191,7 +195,9 @@ def resolve_build_version(repo_root: Path | None = None) -> dict:
             git_version=env_version or git_data["git_version"] or "unknown",
             commit_date=env_date or git_data["commit_date"] or "unknown",
             commit_sha=env_sha or git_data["commit_sha"],
-            source="env" if (env_version or env_date or env_sha) else git_data["source"],
+            source="env"
+            if (env_version or env_date or env_sha)
+            else git_data["source"],
         )
 
     return _build_version_payload(
@@ -202,4 +208,4 @@ def resolve_build_version(repo_root: Path | None = None) -> dict:
     )
 
 
-__all__ = ["resolve_build_version", "_resolve_build_version_from_git_files"]
+__all__ = ["_resolve_build_version_from_git_files", "resolve_build_version"]

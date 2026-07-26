@@ -4,14 +4,12 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 
 from . import db
 from .schemas import to_iso
 from .settings import settings
-
 
 logger = logging.getLogger("tdarr_sync.restore")
 
@@ -47,7 +45,7 @@ class RestoreConfig:
     tdarr_output_dir: Path
     sonarr_url: str
     sonarr_api_key: str
-    sonarr_tag_name: Optional[str]
+    sonarr_tag_name: str | None
     sonarr_base_path: Path
     local_mount_base_path: Path
     admin_password: str
@@ -61,8 +59,8 @@ class SeasonEntry:
     processed: int
     total: int
     status: str
-    last_processed_at: Optional[int]
-    last_processed_at_iso: Optional[str]
+    last_processed_at: int | None
+    last_processed_at_iso: str | None
 
 
 @dataclass
@@ -73,23 +71,23 @@ class SeriesEntry:
     processed: int
     total: int
     status: str
-    last_processed_at: Optional[int]
-    last_processed_at_iso: Optional[str]
-    seasons: List[SeasonEntry]
+    last_processed_at: int | None
+    last_processed_at_iso: str | None
+    seasons: list[SeasonEntry]
 
 
 @dataclass
 class SeriesOutcome:
     series_id: int
     title: str
-    selected_seasons: Optional[List[int]] = None
-    restored: List[str] = field(default_factory=list)
-    archived_transcodes: List[str] = field(default_factory=list)
-    skipped_missing_db: List[str] = field(default_factory=list)
-    skipped_missing_archive: List[str] = field(default_factory=list)
-    skipped_outside_library: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    _db_paths_to_remove: List[str] = field(default_factory=list, repr=False)
+    selected_seasons: list[int] | None = None
+    restored: list[str] = field(default_factory=list)
+    archived_transcodes: list[str] = field(default_factory=list)
+    skipped_missing_db: list[str] = field(default_factory=list)
+    skipped_missing_archive: list[str] = field(default_factory=list)
+    skipped_outside_library: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    _db_paths_to_remove: list[str] = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -99,8 +97,8 @@ class RestoreOutcome:
     files_restored: int
     files_skipped_missing_db: int
     files_skipped_missing_archive: int
-    results: List[SeriesOutcome]
-    messages: List[str] = field(default_factory=list)
+    results: list[SeriesOutcome]
+    messages: list[str] = field(default_factory=list)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -110,7 +108,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
-def parse_selection(expression: str, max_index: int) -> List[int]:
+def parse_selection(expression: str, max_index: int) -> list[int]:
     if max_index <= 0:
         raise RestoreSelectionError("There are no series available to select.")
 
@@ -121,7 +119,7 @@ def parse_selection(expression: str, max_index: int) -> List[int]:
     if expr in {"all", "a", "*"}:
         return list(range(1, max_index + 1))
 
-    selected: List[int] = []
+    selected: list[int] = []
     for raw_part in expr.split(","):
         part = raw_part.strip()
         if not part:
@@ -135,17 +133,21 @@ def parse_selection(expression: str, max_index: int) -> List[int]:
             if start < 1 or end < 1 or start > end:
                 raise RestoreSelectionError(f"Invalid range '{raw_part}' in selection.")
             if end > max_index:
-                raise RestoreSelectionError(f"Range '{raw_part}' exceeds available series ({max_index}).")
+                raise RestoreSelectionError(
+                    f"Range '{raw_part}' exceeds available series ({max_index})."
+                )
             selected.extend(range(start, end + 1))
             continue
         if not part.isdigit():
             raise RestoreSelectionError(f"Invalid token '{raw_part}' in selection.")
         idx = int(part)
         if idx < 1 or idx > max_index:
-            raise RestoreSelectionError(f"Selection index '{idx}' is out of range (1-{max_index}).")
+            raise RestoreSelectionError(
+                f"Selection index '{idx}' is out of range (1-{max_index})."
+            )
         selected.append(idx)
 
-    unique: List[int] = []
+    unique: list[int] = []
     seen = set()
     for idx in selected:
         if idx not in seen:
@@ -168,21 +170,29 @@ class RestoreService:
             sonarr_url = os.environ["SONARR_URL"]
             sonarr_api_key = os.environ["SONARR_API_KEY"]
         except KeyError as exc:
-            raise RestoreConfigurationError(f"Missing required environment variable: {exc}") from exc
+            raise RestoreConfigurationError(
+                f"Missing required environment variable: {exc}"
+            ) from exc
 
         # Match tdarr_sync.py defaults so both services look in the same place when env vars are unset.
-        archive_dir = Path(os.getenv("MOVE_ORIGINAL_FILES_DEST", "/mnt/originals_archive"))
+        archive_dir = Path(
+            os.getenv("MOVE_ORIGINAL_FILES_DEST", "/mnt/originals_archive")
+        )
         backup_suffix = os.getenv("BACKUP_SUFFIX", ".orig")
         move_originals = _bool_env("MOVE_ORIGINAL_FILES", False)
         rename_originals = _bool_env("RENAME_ORIGINAL_FILES", True)
         tdarr_output_dir = Path(os.getenv("TDARR_OUTPUT_DIR", "/media/tdarr/output"))
         sonarr_tag_name = os.getenv("SONARR_TAG_NAME") or None
         sonarr_base_path = Path(os.getenv("SONARR_BASE_PATH", "/tv"))
-        local_mount_base_path = Path(os.getenv("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos"))
+        local_mount_base_path = Path(
+            os.getenv("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos")
+        )
         admin_password = os.getenv("RESTORE_ADMIN_PASSWORD")
 
         if not admin_password:
-            raise RestoreConfigurationError("RESTORE_ADMIN_PASSWORD is not set in the environment.")
+            raise RestoreConfigurationError(
+                "RESTORE_ADMIN_PASSWORD is not set in the environment."
+            )
 
         return RestoreConfig(
             base_dir=base_dir,
@@ -200,12 +210,14 @@ class RestoreService:
             admin_password=admin_password,
         )
 
-    def _load_processed_map(self) -> Dict[str, Optional[int]]:
+    def _load_processed_map(self) -> dict[str, int | None]:
         if not self.config.state_db_file.exists():
-            raise RestoreError(f"State database not found at {self.config.state_db_file}")
+            raise RestoreError(
+                f"State database not found at {self.config.state_db_file}"
+            )
         return db.fetch_all_processed(self.config.state_db_file)
 
-    def series_catalog(self) -> List[SeriesEntry]:
+    def series_catalog(self) -> list[SeriesEntry]:
         processed_map = self._load_processed_map()
         series_list = self._fetch_series_list()
         return self._build_entries(series_list, processed_map)
@@ -213,8 +225,8 @@ class RestoreService:
     def restore(
         self,
         password: str,
-        selection_expr: Optional[str] = None,
-        structured: Optional[List[Dict[str, Optional[List[int]]]]] = None,
+        selection_expr: str | None = None,
+        structured: list[dict[str, list[int] | None]] | None = None,
     ) -> RestoreOutcome:
         if password != self.config.admin_password:
             raise RestoreAuthError("Invalid password.")
@@ -224,22 +236,26 @@ class RestoreService:
 
         processed_map = self._load_processed_map()
         series_list = self._fetch_series_list()
-        logger.info("Restore catalog loaded: %d series retrieved from Sonarr.", len(series_list))
-        selected: List[Tuple[SeriesEntry, Optional[Set[int]]]] = []
+        logger.info(
+            "Restore catalog loaded: %d series retrieved from Sonarr.", len(series_list)
+        )
+        selected: list[tuple[SeriesEntry, set[int] | None]] = []
 
-        episode_lookup: Dict[int, List[dict]] = {}
+        episode_lookup: dict[int, list[dict]] = {}
 
         if structured:
-            logger.info("Structured restore requested for %d payload entries.", len(structured))
-            series_lookup: Dict[int, dict] = {}
+            logger.info(
+                "Structured restore requested for %d payload entries.", len(structured)
+            )
+            series_lookup: dict[int, dict] = {}
             for item in series_list:
                 try:
                     series_lookup[int(item.get("id"))] = item
                 except (TypeError, ValueError):
                     continue
 
-            entry_cache: Dict[int, SeriesEntry] = {}
-            episodes_cache: Dict[int, List[dict]] = {}
+            entry_cache: dict[int, SeriesEntry] = {}
+            episodes_cache: dict[int, list[dict]] = {}
 
             def get_entry(series_id: int) -> SeriesEntry:
                 entry = entry_cache.get(series_id)
@@ -247,25 +263,43 @@ class RestoreService:
                     return entry
                 series_raw = series_lookup.get(series_id)
                 if series_raw is None:
-                    raise RestoreNotFoundError(f"Series id {series_id} not found in the current catalog.")
-                logger.info("Fetching episode data for series_id=%s title='%s'.", series_id, series_raw.get("title"))
+                    raise RestoreNotFoundError(
+                        f"Series id {series_id} not found in the current catalog."
+                    )
+                logger.info(
+                    "Fetching episode data for series_id=%s title='%s'.",
+                    series_id,
+                    series_raw.get("title"),
+                )
                 episodes = self._fetch_episode_files(series_id)
                 episodes_cache[series_id] = episodes
-                logger.info("Retrieved %d episode files for series_id=%s.", len(episodes), series_id)
-                snapshot = self._series_snapshot(series_raw, processed_map, preloaded_episodes=episodes)
+                logger.info(
+                    "Retrieved %d episode files for series_id=%s.",
+                    len(episodes),
+                    series_id,
+                )
+                snapshot = self._series_snapshot(
+                    series_raw, processed_map, preloaded_episodes=episodes
+                )
                 entry_cache[series_id] = snapshot
                 return snapshot
 
             if not isinstance(structured, list) or len(structured) == 0:
-                raise RestoreSelectionError("Structured selection must include at least one series.")
+                raise RestoreSelectionError(
+                    "Structured selection must include at least one series."
+                )
             for item in structured:
                 series_id_raw = item.get("series_id")
                 if series_id_raw is None:
-                    raise RestoreSelectionError("Structured selection missing series_id.")
+                    raise RestoreSelectionError(
+                        "Structured selection missing series_id."
+                    )
                 try:
                     series_id = int(series_id_raw)
                 except (TypeError, ValueError) as exc:
-                    raise RestoreSelectionError(f"Invalid series_id value: {series_id_raw}") from exc
+                    raise RestoreSelectionError(
+                        f"Invalid series_id value: {series_id_raw}"
+                    ) from exc
                 entry = get_entry(series_id)
 
                 seasons_raw = item.get("seasons")
@@ -276,7 +310,9 @@ class RestoreService:
                 try:
                     requested_seasons = {int(value) for value in seasons_raw}
                 except (TypeError, ValueError) as exc:
-                    raise RestoreSelectionError(f"Invalid season list for series {series_id}.") from exc
+                    raise RestoreSelectionError(
+                        f"Invalid season list for series {series_id}."
+                    ) from exc
 
                 valid_numbers = {season.number for season in entry.seasons}
                 invalid = requested_seasons - valid_numbers
@@ -300,7 +336,7 @@ class RestoreService:
             len(structured or []),
             len(selected),
         )
-        outcomes: List[SeriesOutcome] = []
+        outcomes: list[SeriesOutcome] = []
         total_restored = 0
         total_missing_db = 0
         total_missing_archive = 0
@@ -331,7 +367,12 @@ class RestoreService:
                     time.monotonic() - series_started,
                 )
             except RestoreError as exc:
-                logger.error("Restore failed for series '%s' (id=%s): %s", entry.title, entry.series_id, exc)
+                logger.error(
+                    "Restore failed for series '%s' (id=%s): %s",
+                    entry.title,
+                    entry.series_id,
+                    exc,
+                )
                 series_outcome = SeriesOutcome(
                     series_id=entry.series_id,
                     title=entry.title,
@@ -340,7 +381,11 @@ class RestoreService:
                 )
                 any_errors = True
             except Exception as exc:  # pragma: no cover
-                logger.exception("Unexpected error restoring series '%s' (id=%s)", entry.title, entry.series_id)
+                logger.exception(
+                    "Unexpected error restoring series '%s' (id=%s)",
+                    entry.title,
+                    entry.series_id,
+                )
                 series_outcome = SeriesOutcome(
                     series_id=entry.series_id,
                     title=entry.title,
@@ -355,7 +400,7 @@ class RestoreService:
             if series_outcome.errors:
                 any_errors = True
 
-        to_remove: List[str] = []
+        to_remove: list[str] = []
         for result in outcomes:
             to_remove.extend(result._db_paths_to_remove)
 
@@ -364,13 +409,16 @@ class RestoreService:
             logger.info("Removed %s processed entries from DB.", removed)
         elif to_remove and any_errors:
             logger.warning(
-                "Restore completed with errors; skipping DB cleanup for %d processed entries.", len(to_remove)
+                "Restore completed with errors; skipping DB cleanup for %d processed entries.",
+                len(to_remove),
             )
 
         messages = []
         for outcome in outcomes:
             if outcome.restored:
-                messages.append(f"Restored {len(outcome.restored)} files for '{outcome.title}'.")
+                messages.append(
+                    f"Restored {len(outcome.restored)} files for '{outcome.title}'."
+                )
             elif outcome.errors:
                 messages.append(f"No files restored for '{outcome.title}'. See errors.")
             else:
@@ -401,14 +449,16 @@ class RestoreService:
             messages=messages,
         )
 
-    def _build_entries(self, series_list, processed_map) -> List[SeriesEntry]:
-        entries: List[SeriesEntry] = []
+    def _build_entries(self, series_list, processed_map) -> list[SeriesEntry]:
+        entries: list[SeriesEntry] = []
         for series in series_list:
             snapshot = self._series_snapshot(series, processed_map)
             entries.append(snapshot)
 
         status_rank = {"full": 0, "partial": 1, "none": 2}
-        entries.sort(key=lambda item: (status_rank.get(item.status, 3), item.title.lower()))
+        entries.sort(
+            key=lambda item: (status_rank.get(item.status, 3), item.title.lower())
+        )
         for idx, entry in enumerate(entries, start=1):
             entry.index = idx
         return entries
@@ -416,17 +466,21 @@ class RestoreService:
     def _series_snapshot(
         self,
         series: dict,
-        processed_map: Dict[str, Optional[int]],
-        preloaded_episodes: Optional[List[dict]] = None,
+        processed_map: dict[str, int | None],
+        preloaded_episodes: list[dict] | None = None,
     ) -> SeriesEntry:
         series_id = int(series.get("id"))
         title = str(series.get("title") or "<untitled>")
-        episodes = preloaded_episodes if preloaded_episodes is not None else self._fetch_episode_files(series_id)
+        episodes = (
+            preloaded_episodes
+            if preloaded_episodes is not None
+            else self._fetch_episode_files(series_id)
+        )
 
         total = 0
         processed = 0
-        last_ts: Optional[int] = None
-        season_stats: Dict[int, Dict[str, Optional[int] | int]] = {}
+        last_ts: int | None = None
+        season_stats: dict[int, dict[str, int | None]] = {}
 
         for episode in episodes:
             if not isinstance(episode, dict):
@@ -450,7 +504,9 @@ class RestoreService:
                     last_ts = ts
 
             season_number = self._episode_season_number(episode)
-            stats = season_stats.setdefault(season_number, {"total": 0, "processed": 0, "last": None})
+            stats = season_stats.setdefault(
+                season_number, {"total": 0, "processed": 0, "last": None}
+            )
             stats["total"] = int(stats["total"]) + 1
             if ts is not None:
                 stats["processed"] = int(stats["processed"]) + 1
@@ -458,7 +514,7 @@ class RestoreService:
                     stats["last"] = ts
 
         status = self._status_from_counts(processed, total)
-        seasons: List[SeasonEntry] = []
+        seasons: list[SeasonEntry] = []
         for number in sorted(season_stats):
             stats = season_stats[number]
             season_processed = int(stats["processed"])  # type: ignore[index]
@@ -518,16 +574,24 @@ class RestoreService:
     def _restore_single_series(
         self,
         entry: SeriesEntry,
-        processed_map: Dict[str, Optional[int]],
-        selected_seasons: Optional[Set[int]] = None,
+        processed_map: dict[str, int | None],
+        selected_seasons: set[int] | None = None,
         *,
-        preloaded_episodes: Optional[List[dict]] = None,
+        preloaded_episodes: list[dict] | None = None,
     ) -> SeriesOutcome:
-        logger.info("Attempting restore for series '%s' (id=%s)", entry.title, entry.series_id)
+        logger.info(
+            "Attempting restore for series '%s' (id=%s)", entry.title, entry.series_id
+        )
         seasons_list = sorted(selected_seasons) if selected_seasons else None
-        outcome = SeriesOutcome(series_id=entry.series_id, title=entry.title, selected_seasons=seasons_list)
+        outcome = SeriesOutcome(
+            series_id=entry.series_id, title=entry.title, selected_seasons=seasons_list
+        )
         seen_paths: set[str] = set()
-        episodes = preloaded_episodes if preloaded_episodes is not None else self._fetch_episode_files(entry.series_id)
+        episodes = (
+            preloaded_episodes
+            if preloaded_episodes is not None
+            else self._fetch_episode_files(entry.series_id)
+        )
         logger.info(
             "Processing %d episode file records for series '%s' (id=%s)",
             len(episodes),
@@ -576,20 +640,28 @@ class RestoreService:
                     outcome.archived_transcodes.append(str(backup_transcoded))
                 outcome._db_paths_to_remove.append(abs_str)
                 logger.info("Restored original %s from %s", abs_str, archive_candidate)
-            except Exception as exc:
+            except OSError as exc:
                 outcome.errors.append(f"Failed to restore {abs_str}: {exc}")
                 logger.error("Failed to restore %s: %s", abs_str, exc)
                 if backup_transcoded and not resolved.exists():
                     try:
                         shutil.move(str(backup_transcoded), str(resolved))
-                    except Exception as restore_exc:  # pragma: no cover
-                        logger.warning("Failed to roll back transcoded file for %s: %s", abs_str, restore_exc)
+                    except OSError as restore_exc:  # pragma: no cover
+                        logger.warning(
+                            "Failed to roll back transcoded file for %s: %s",
+                            abs_str,
+                            restore_exc,
+                        )
 
         return outcome
 
-    def _resolve_under_base(self, candidate: Path) -> Optional[Path]:
+    def _resolve_under_base(self, candidate: Path) -> Path | None:
         try:
-            resolved = candidate if candidate.is_absolute() else self.config.base_dir.joinpath(candidate)
+            resolved = (
+                candidate
+                if candidate.is_absolute()
+                else self.config.base_dir.joinpath(candidate)
+            )
             resolved = resolved.resolve(strict=False)
         except (OSError, RuntimeError):
             return None
@@ -607,14 +679,17 @@ class RestoreService:
                 relative = path.relative_to(self.config.sonarr_base_path)
                 return self.config.local_mount_base_path.joinpath(relative)
         except ValueError:
-            logger.warning("Unable to translate Sonarr path outside configured base: %s", sonarr_path)
+            logger.warning(
+                "Unable to translate Sonarr path outside configured base: %s",
+                sonarr_path,
+            )
         return path
 
-    def _select_archive_candidate(self, target_path: Path) -> Optional[Path]:
+    def _select_archive_candidate(self, target_path: Path) -> Path | None:
         if not self.config.rename_originals:
             return None
 
-        candidates: List[Path] = []
+        candidates: list[Path] = []
         if self.config.move_originals:
             try:
                 relative = target_path.relative_to(self._base_dir_resolved)
@@ -638,30 +713,40 @@ class RestoreService:
         if not candidates:
             return None
 
-        candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+        candidates.sort(
+            key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True
+        )
         return candidates[0]
 
-    def _archive_transcoded_file(self, target_path: Path) -> Optional[Path]:
+    def _archive_transcoded_file(self, target_path: Path) -> Path | None:
         if not target_path.exists():
             return None
 
         try:
             relative = target_path.relative_to(self._base_dir_resolved)
-            archive_root = self.config.archive_dir.joinpath("_restored_transcodes", relative.parent)
+            archive_root = self.config.archive_dir.joinpath(
+                "_restored_transcodes", relative.parent
+            )
             archive_root.mkdir(parents=True, exist_ok=True)
             destination = archive_root.joinpath(target_path.name)
             destination = self._unique_path(destination)
             shutil.move(str(target_path), str(destination))
             return destination
-        except Exception as exc:
-            logger.warning("Failed to archive transcoded file for %s: %s", target_path, exc)
+        except OSError as exc:
+            logger.warning(
+                "Failed to archive transcoded file for %s: %s", target_path, exc
+            )
             fallback = target_path.with_name(f"{target_path.name}.tdarr")
             fallback = self._unique_path(fallback)
             try:
                 shutil.move(str(target_path), str(fallback))
                 return fallback
-            except Exception as fallback_exc:  # pragma: no cover
-                logger.error("Failed to move transcoded file for %s: %s", target_path, fallback_exc)
+            except OSError as fallback_exc:  # pragma: no cover
+                logger.error(
+                    "Failed to move transcoded file for %s: %s",
+                    target_path,
+                    fallback_exc,
+                )
                 return None
 
     @staticmethod
@@ -677,12 +762,9 @@ class RestoreService:
                 return candidate
             counter += 1
 
-    def _fetch_series_list(self) -> List[dict]:
+    def _fetch_series_list(self) -> list[dict]:
         tag_id = self._find_tag_id()
-        try:
-            series = self._sonarr_get("/series")
-        except RestoreError:
-            raise
+        series = self._sonarr_get("/series")
         if tag_id is None:
             return series
         filtered = []
@@ -692,10 +774,10 @@ class RestoreService:
                 filtered.append(item)
         return filtered
 
-    def _fetch_episode_files(self, series_id: int) -> List[dict]:
+    def _fetch_episode_files(self, series_id: int) -> list[dict]:
         return self._sonarr_get("/episodefile", params={"seriesId": series_id})
 
-    def _find_tag_id(self) -> Optional[int]:
+    def _find_tag_id(self) -> int | None:
         if not self.config.sonarr_tag_name:
             return None
         tags = self._sonarr_get("/tag")
@@ -706,7 +788,7 @@ class RestoreService:
             f"Tag '{self.config.sonarr_tag_name}' not found in Sonarr. Update SONARR_TAG_NAME or add the tag."
         )
 
-    def _sonarr_get(self, endpoint: str, params: Optional[dict] = None):
+    def _sonarr_get(self, endpoint: str, params: dict | None = None):
         url = self.config.sonarr_url.rstrip("/") + "/api/v3" + endpoint
         query = dict(params or {})
         query["apikey"] = self.config.sonarr_api_key
@@ -715,6 +797,8 @@ class RestoreService:
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
-            raise RestoreError(f"Sonarr request failed ({exc.response.status_code}): {exc}") from exc
+            raise RestoreError(
+                f"Sonarr request failed ({exc.response.status_code}): {exc}"
+            ) from exc
         except requests.RequestException as exc:
             raise RestoreError(f"Sonarr request failed: {exc}") from exc

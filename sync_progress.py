@@ -6,8 +6,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 ETA_MIN_COMPLETED = 3
@@ -25,11 +24,11 @@ def _now() -> int:
 
 def calculate_eta_seconds(
     completed_items: int,
-    total_items: Optional[int],
-    phase_started_at: Optional[int],
+    total_items: int | None,
+    phase_started_at: int | None,
     *,
-    now: Optional[int] = None,
-) -> Optional[int]:
+    now: int | None = None,
+) -> int | None:
     if not total_items or total_items <= 0:
         return None
     if completed_items >= total_items:
@@ -48,10 +47,10 @@ def calculate_eta_seconds(
     if rate <= 0:
         return None
     remaining = max(0, total_items - completed_items)
-    return int(round(remaining / rate))
+    return round(remaining / rate)
 
 
-def calculate_percent(completed_items: int, total_items: Optional[int]) -> Optional[float]:
+def calculate_percent(completed_items: int, total_items: int | None) -> float | None:
     if not total_items or total_items <= 0:
         return None
     bounded = min(max(completed_items, 0), total_items)
@@ -65,26 +64,26 @@ def build_progress_snapshot(
     phase: str,
     action: str = "",
     dry_run: bool = False,
-    source: Optional[str] = None,
-    title: Optional[str] = None,
-    path: Optional[str] = None,
-    destination: Optional[str] = None,
-    message: Optional[str] = None,
+    source: str | None = None,
+    title: str | None = None,
+    path: str | None = None,
+    destination: str | None = None,
+    message: str | None = None,
     completed_items: int = 0,
-    total_items: Optional[int] = None,
+    total_items: int | None = None,
     skipped_items: int = 0,
     failed_items: int = 0,
-    started_at: Optional[int] = None,
-    phase_started_at: Optional[int] = None,
-    updated_at: Optional[int] = None,
-    finished_at: Optional[int] = None,
-    error: Optional[str] = None,
-) -> Dict[str, Any]:
+    started_at: int | None = None,
+    phase_started_at: int | None = None,
+    updated_at: int | None = None,
+    finished_at: int | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
     current = updated_at if updated_at is not None else _now()
     start = started_at if started_at is not None else current
     phase_start = phase_started_at if phase_started_at is not None else current
 
-    snapshot: Dict[str, Any] = {
+    snapshot: dict[str, Any] = {
         "run_id": run_id,
         "state": state,
         "phase": phase,
@@ -100,7 +99,9 @@ def build_progress_snapshot(
         "skipped_items": int(skipped_items),
         "failed_items": int(failed_items),
         "percent": calculate_percent(int(completed_items), total_items),
-        "eta_seconds": calculate_eta_seconds(int(completed_items), total_items, phase_start, now=current),
+        "eta_seconds": calculate_eta_seconds(
+            int(completed_items), total_items, phase_start, now=current
+        ),
         "started_at": int(start),
         "phase_started_at": int(phase_start),
         "updated_at": int(current),
@@ -111,9 +112,11 @@ def build_progress_snapshot(
     return snapshot
 
 
-def write_progress_file(path: Path, snapshot: Dict[str, Any]) -> None:
+def write_progress_file(path: Path, snapshot: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=".sync_progress_", suffix=".json", dir=str(path.parent))
+    fd, temp_name = tempfile.mkstemp(
+        prefix=".sync_progress_", suffix=".json", dir=str(path.parent)
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(snapshot, handle, indent=2, sort_keys=True)
@@ -126,7 +129,9 @@ def write_progress_file(path: Path, snapshot: Dict[str, Any]) -> None:
             os.remove(temp_name)
 
 
-def read_progress_file(path: Path, *, max_age_seconds: Optional[int] = None) -> Optional[Dict[str, Any]]:
+def read_progress_file(
+    path: Path, *, max_age_seconds: int | None = None
+) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
@@ -160,11 +165,13 @@ class ProgressReporter:
         self.phase = "starting"
         self.action = "starting"
         self.completed_items = 0
-        self.total_items: Optional[int] = None
+        self.total_items: int | None = None
         self.skipped_items = 0
         self.failed_items = 0
 
-    def begin_phase(self, phase: str, *, total_items: Optional[int] = None, action: str = "planning") -> None:
+    def begin_phase(
+        self, phase: str, *, total_items: int | None = None, action: str = "planning"
+    ) -> None:
         self.phase = phase
         self.action = action
         self.phase_started_at = _now()
@@ -174,7 +181,13 @@ class ProgressReporter:
         self.failed_items = 0
         self.emit()
 
-    def set_total(self, total_items: int, *, action: str = "processing", message: Optional[str] = None) -> None:
+    def set_total(
+        self,
+        total_items: int,
+        *,
+        action: str = "processing",
+        message: str | None = None,
+    ) -> None:
         self.total_items = total_items
         self.action = action
         self.emit(message=message)
@@ -183,11 +196,11 @@ class ProgressReporter:
         self,
         *,
         action: str,
-        source: Optional[str] = None,
-        title: Optional[str] = None,
-        path: Optional[str] = None,
-        destination: Optional[str] = None,
-        message: Optional[str] = None,
+        source: str | None = None,
+        title: str | None = None,
+        path: str | None = None,
+        destination: str | None = None,
+        message: str | None = None,
         completed_delta: int = 1,
         skipped_delta: int = 0,
         failed_delta: int = 0,
@@ -196,19 +209,25 @@ class ProgressReporter:
         self.completed_items += completed_delta
         self.skipped_items += skipped_delta
         self.failed_items += failed_delta
-        self.emit(source=source, title=title, path=path, destination=destination, message=message)
+        self.emit(
+            source=source,
+            title=title,
+            path=path,
+            destination=destination,
+            message=message,
+        )
 
     def emit(
         self,
         *,
         state: str = "running",
-        source: Optional[str] = None,
-        title: Optional[str] = None,
-        path: Optional[str] = None,
-        destination: Optional[str] = None,
-        message: Optional[str] = None,
-        error: Optional[str] = None,
-        finished_at: Optional[int] = None,
+        source: str | None = None,
+        title: str | None = None,
+        path: str | None = None,
+        destination: str | None = None,
+        message: str | None = None,
+        error: str | None = None,
+        finished_at: int | None = None,
     ) -> None:
         snapshot = build_progress_snapshot(
             run_id=self.run_id,
@@ -232,14 +251,26 @@ class ProgressReporter:
         )
         write_progress_file(self.path, snapshot)
 
-    def finish(self, state: str = "succeeded", *, message: Optional[str] = None, error: Optional[str] = None) -> None:
+    def finish(
+        self,
+        state: str = "succeeded",
+        *,
+        message: str | None = None,
+        error: str | None = None,
+    ) -> None:
         finished_at = _now()
         self.emit(state=state, message=message, error=error, finished_at=finished_at)
 
 
-def mark_progress_terminal(path: Path, run_id: str, state: str, *, error: Optional[str] = None) -> None:
+def mark_progress_terminal(
+    path: Path, run_id: str, state: str, *, error: str | None = None
+) -> None:
     current = read_progress_file(path)
-    if current and current.get("run_id") == run_id and current.get("state") in TERMINAL_STATES:
+    if (
+        current
+        and current.get("run_id") == run_id
+        and current.get("state") in TERMINAL_STATES
+    ):
         return
 
     now = _now()

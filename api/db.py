@@ -1,10 +1,9 @@
 import os
 import re
 import sqlite3
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple
-
 
 Category = str
 
@@ -13,8 +12,8 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
 
 
-def _chunked(iterable: Iterable[str], size: int) -> Iterator[List[str]]:
-    chunk: List[str] = []
+def _chunked(iterable: Iterable[str], size: int) -> Iterator[list[str]]:
+    chunk: list[str] = []
     for item in iterable:
         chunk.append(item)
         if len(chunk) >= size:
@@ -24,7 +23,9 @@ def _chunked(iterable: Iterable[str], size: int) -> Iterator[List[str]]:
         yield chunk
 
 
-def fetch_processed_files(db_path: Path, limit: int = 50, offset: int = 0) -> List[Dict]:
+def fetch_processed_files(
+    db_path: Path, limit: int = 50, offset: int = 0
+) -> list[dict]:
     if not db_path.exists():
         return []
 
@@ -46,7 +47,7 @@ def fetch_processed_files(db_path: Path, limit: int = 50, offset: int = 0) -> Li
     return [dict(row) for row in rows]
 
 
-def _fetch_processed_rows(db_path: Path) -> List[Dict]:
+def _fetch_processed_rows(db_path: Path) -> list[dict]:
     if not db_path.exists():
         return []
 
@@ -64,7 +65,7 @@ def _fetch_processed_rows(db_path: Path) -> List[Dict]:
     return [dict(row) for row in rows]
 
 
-def fetch_summary(db_path: Path) -> Dict[str, Optional[int]]:
+def fetch_summary(db_path: Path) -> dict[str, int | None]:
     if not db_path.exists():
         return {"total": 0, "last_processed_at": None, "earliest_processed_at": None}
 
@@ -81,7 +82,11 @@ def fetch_summary(db_path: Path) -> Dict[str, Optional[int]]:
                 """
             ).fetchone()
         except sqlite3.OperationalError:
-            return {"total": 0, "last_processed_at": None, "earliest_processed_at": None}
+            return {
+                "total": 0,
+                "last_processed_at": None,
+                "earliest_processed_at": None,
+            }
 
     return {
         "total": row["total"],
@@ -90,7 +95,7 @@ def fetch_summary(db_path: Path) -> Dict[str, Optional[int]]:
     }
 
 
-def database_file_stats(db_path: Path) -> Dict[str, Optional[int]]:
+def database_file_stats(db_path: Path) -> dict[str, int | None]:
     if not db_path.exists():
         return {"exists": False, "size_bytes": None, "last_modified": None}
 
@@ -102,21 +107,21 @@ def database_file_stats(db_path: Path) -> Dict[str, Optional[int]]:
     }
 
 
-def fetch_all_processed(db_path: Path) -> Dict[str, Optional[int]]:
+def fetch_all_processed(db_path: Path) -> dict[str, int | None]:
     rows = _fetch_processed_rows(db_path)
     return {row["file_path"]: row["processed_at"] for row in rows}
 
 
-def fetch_processed_catalog(db_path: Path) -> Dict:
+def fetch_processed_catalog(db_path: Path) -> dict:
     rows = _fetch_processed_rows(db_path)
     catalog = _empty_catalog()
     if not rows:
         return catalog
 
     bases = _catalog_bases()
-    tv_groups: Dict[Tuple[str, str], Dict] = {}
-    movie_groups: Dict[str, Dict] = {}
-    folder_groups: Dict[str, Dict] = {}
+    tv_groups: dict[tuple[str, str], dict] = {}
+    movie_groups: dict[str, dict] = {}
+    folder_groups: dict[str, dict] = {}
 
     for row in rows:
         file_path = str(row.get("file_path") or "")
@@ -127,7 +132,12 @@ def fetch_processed_catalog(db_path: Path) -> Dict:
         if metadata["category"] == "movies":
             group = movie_groups.setdefault(
                 metadata["group_path"],
-                _new_group(metadata["group_id"], "movie", metadata["group_title"], metadata["group_path"]),
+                _new_group(
+                    metadata["group_id"],
+                    "movie",
+                    metadata["group_title"],
+                    metadata["group_path"],
+                ),
             )
             _touch_group(group, processed_at)
             continue
@@ -136,7 +146,12 @@ def fetch_processed_catalog(db_path: Path) -> Dict:
             group = tv_groups.setdefault(
                 (metadata["group_path"], metadata["group_title"]),
                 {
-                    **_new_group(metadata["group_id"], "tv", metadata["group_title"], metadata["group_path"]),
+                    **_new_group(
+                        metadata["group_id"],
+                        "tv",
+                        metadata["group_title"],
+                        metadata["group_path"],
+                    ),
                     "seasons": {},
                 },
             )
@@ -157,14 +172,21 @@ def fetch_processed_catalog(db_path: Path) -> Dict:
 
         group = folder_groups.setdefault(
             metadata["group_path"],
-            _new_group(metadata["group_id"], "folder", metadata["group_title"], metadata["group_path"]),
+            _new_group(
+                metadata["group_id"],
+                "folder",
+                metadata["group_title"],
+                metadata["group_path"],
+            ),
         )
         _touch_group(group, processed_at)
 
     tv_items = []
     for group in tv_groups.values():
         seasons = list(group.pop("seasons").values())
-        seasons.sort(key=lambda item: (item["number"] < 0, item["number"], item["name"].lower()))
+        seasons.sort(
+            key=lambda item: (item["number"] < 0, item["number"], item["name"].lower())
+        )
         group["seasons"] = seasons
         tv_items.append(group)
 
@@ -184,8 +206,8 @@ def fetch_processed_records(
     db_path: Path,
     category: Category,
     group_id: str,
-    season_number: Optional[int] = None,
-) -> List[Dict]:
+    season_number: int | None = None,
+) -> list[dict]:
     if category not in {"tv", "movies", "folders"}:
         return []
 
@@ -212,7 +234,9 @@ def fetch_processed_records(
     return records
 
 
-def delete_processed_entries(db_path: Path, file_paths: Iterable[str], chunk_size: int = 200) -> int:
+def delete_processed_entries(
+    db_path: Path, file_paths: Iterable[str], chunk_size: int = 200
+) -> int:
     paths = [path for path in file_paths if path]
     if not paths or not db_path.exists():
         return 0
@@ -236,13 +260,17 @@ def delete_processed_entries(db_path: Path, file_paths: Iterable[str], chunk_siz
     return deleted
 
 
-def _empty_catalog() -> Dict:
+def _empty_catalog() -> dict:
     return {"total_files": 0, "tv": [], "movies": [], "folders": []}
 
 
-def _catalog_bases() -> Dict[str, str]:
-    sonarr_base = os.getenv("LOCAL_MOUNT_BASE_PATH", os.getenv("BASE_DIR", "/media/library"))
-    radarr_base = os.getenv("RADARR_LOCAL_MOUNT_BASE_PATH", os.getenv("BASE_DIR", "/media/radarr_library"))
+def _catalog_bases() -> dict[str, str]:
+    sonarr_base = os.getenv(
+        "LOCAL_MOUNT_BASE_PATH", os.getenv("BASE_DIR", "/media/library")
+    )
+    radarr_base = os.getenv(
+        "RADARR_LOCAL_MOUNT_BASE_PATH", os.getenv("BASE_DIR", "/media/radarr_library")
+    )
     return {
         "sonarr": _normalize_path_string(sonarr_base),
         "radarr": _normalize_path_string(radarr_base),
@@ -259,7 +287,7 @@ def _is_under_base(file_path: str, base: str) -> bool:
     return normalized == base or normalized.startswith(f"{base}/")
 
 
-def _parts_relative_to(file_path: str, base: str) -> List[str]:
+def _parts_relative_to(file_path: str, base: str) -> list[str]:
     normalized = _normalize_path_string(file_path)
     if _is_under_base(normalized, base):
         relative = normalized[len(base) :].lstrip("/")
@@ -267,7 +295,7 @@ def _parts_relative_to(file_path: str, base: str) -> List[str]:
     return [part for part in normalized.split("/") if part]
 
 
-def _record_metadata(file_path: str, bases: Dict[str, str]) -> Dict:
+def _record_metadata(file_path: str, bases: dict[str, str]) -> dict:
     source = _classify_path(file_path, bases["sonarr"], bases["radarr"])
     if source == "movies":
         group_path, group_title = _movie_group_key(file_path, bases["radarr"])
@@ -280,7 +308,9 @@ def _record_metadata(file_path: str, bases: Dict[str, str]) -> Dict:
             "season_name": None,
         }
     if source == "tv":
-        group_path, group_title, season_number, season_name = _tv_group_key(file_path, bases["sonarr"])
+        group_path, group_title, season_number, season_name = _tv_group_key(
+            file_path, bases["sonarr"]
+        )
         return {
             "category": "tv",
             "group_id": f"tv:{group_path}",
@@ -319,17 +349,24 @@ def _classify_path(file_path: str, sonarr_base: str, radarr_base: str) -> str:
     return "folders"
 
 
-def _tv_group_key(file_path: str, base: str) -> Tuple[str, str, int, str]:
+def _tv_group_key(file_path: str, base: str) -> tuple[str, str, int, str]:
     parts = _parts_relative_to(file_path, base)
     path = Path(file_path)
     if len(parts) < 2:
-        return (str(path.parent), path.parent.name or "Unknown series", -1, "Unknown season")
+        return (
+            str(path.parent),
+            path.parent.name or "Unknown series",
+            -1,
+            "Unknown season",
+        )
 
     directory_parts = parts[:-1]
     season_index = _find_season_index(directory_parts)
     if season_index is None:
         season_number = _season_from_filename(path.name)
-        show_parts = directory_parts[:-1] if len(directory_parts) > 1 else directory_parts
+        show_parts = (
+            directory_parts[:-1] if len(directory_parts) > 1 else directory_parts
+        )
     else:
         season_number = _season_from_name(directory_parts[season_index])
         show_parts = directory_parts[:season_index]
@@ -338,11 +375,15 @@ def _tv_group_key(file_path: str, base: str) -> Tuple[str, str, int, str]:
         show_parts = [directory_parts[0]]
 
     show_title = show_parts[-1] if show_parts else path.parent.name or "Unknown series"
-    show_key = _normalize_path_string("/".join([base, *show_parts])) if show_parts else str(path.parent)
+    show_key = (
+        _normalize_path_string("/".join([base, *show_parts]))
+        if show_parts
+        else str(path.parent)
+    )
     return (show_key, show_title, season_number, _season_label(season_number))
 
 
-def _movie_group_key(file_path: str, base: str) -> Tuple[str, str]:
+def _movie_group_key(file_path: str, base: str) -> tuple[str, str]:
     parts = _parts_relative_to(file_path, base)
     path = Path(file_path)
     if len(parts) >= 2:
@@ -352,12 +393,12 @@ def _movie_group_key(file_path: str, base: str) -> Tuple[str, str]:
     return (str(path), path.stem or path.name)
 
 
-def _folder_group_key(file_path: str) -> Tuple[str, str]:
+def _folder_group_key(file_path: str) -> tuple[str, str]:
     parent = Path(file_path).parent
     return (str(parent), parent.name or str(parent))
 
 
-def _new_group(group_id: str, group_type: str, title: str, path: str) -> Dict:
+def _new_group(group_id: str, group_type: str, title: str, path: str) -> dict:
     return {
         "id": group_id,
         "type": group_type,
@@ -370,7 +411,7 @@ def _new_group(group_id: str, group_type: str, title: str, path: str) -> Dict:
     }
 
 
-def _find_season_index(parts: List[str]) -> Optional[int]:
+def _find_season_index(parts: list[str]) -> int | None:
     for index, part in enumerate(parts):
         if _season_from_name(part) >= 0:
             return index
@@ -399,7 +440,10 @@ def _season_label(number: int) -> str:
     return f"Season {number:02d}"
 
 
-def _touch_group(target: Dict, processed_at: Optional[int]) -> None:
+def _touch_group(target: dict, processed_at: int | None) -> None:
     target["file_count"] += 1
-    if isinstance(processed_at, int) and (target.get("last_processed_at") or 0) < processed_at:
+    if (
+        isinstance(processed_at, int)
+        and (target.get("last_processed_at") or 0) < processed_at
+    ):
         target["last_processed_at"] = processed_at

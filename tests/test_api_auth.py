@@ -34,7 +34,9 @@ def test_protected_endpoint_rejects_bad_bearer_token():
 def test_protected_endpoint_accepts_configured_bearer_token():
     client = TestClient(app)
 
-    response = client.get("/config", headers={"Authorization": f"Bearer {settings.api_auth_token}"})
+    response = client.get(
+        "/config", headers={"Authorization": f"Bearer {settings.api_auth_token}"}
+    )
 
     assert response.status_code == 200
     assert response.json()["api_auth_configured"] is True

@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime_settings import load_runtime_settings, normalize_runtime_settings_payload, save_runtime_settings
+from runtime_settings import (
+    load_runtime_settings,
+    normalize_runtime_settings_payload,
+    save_runtime_settings,
+)
 
 
 class RuntimeSettingsTests(unittest.TestCase):

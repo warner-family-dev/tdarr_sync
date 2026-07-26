@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from api.build_version import _resolve_build_version_from_git_files, resolve_build_version
+from api.build_version import (
+    _resolve_build_version_from_git_files,
+    resolve_build_version,
+)
 
 
 class BuildVersionResolverTests(unittest.TestCase):
@@ -57,9 +60,13 @@ class BuildVersionResolverTests(unittest.TestCase):
             (git_dir / "refs" / "heads" / "dev").mkdir(parents=True, exist_ok=True)
             (git_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-            (git_dir / "HEAD").write_text("ref: refs/heads/dev/v1.1.3\n", encoding="utf-8")
+            (git_dir / "HEAD").write_text(
+                "ref: refs/heads/dev/v1.1.3\n", encoding="utf-8"
+            )
             full_sha = "a1b2c3d4e5f678901234567890abcdef12345678"
-            (git_dir / "refs" / "heads" / "dev" / "v1.1.3").write_text(f"{full_sha}\n", encoding="utf-8")
+            (git_dir / "refs" / "heads" / "dev" / "v1.1.3").write_text(
+                f"{full_sha}\n", encoding="utf-8"
+            )
 
             ts = 1737244800  # 2025-01-19 UTC
             (git_dir / "logs" / "HEAD").write_text(
@@ -68,7 +75,9 @@ class BuildVersionResolverTests(unittest.TestCase):
             )
 
             resolved = _resolve_build_version_from_git_files(repo_root)
-            expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
             self.assertEqual(resolved["git_version"], "dev/v1.1.3")
             self.assertEqual(resolved["commit_date"], expected_date)
             self.assertEqual(resolved["commit_sha"], full_sha[:7])
