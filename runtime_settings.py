@@ -7,9 +7,16 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ALLOWED_SOURCES = {"sonarr", "radarr"}
 DEFAULT_RUNTIME_SETTINGS_FILE = Path("/data/runtime_settings.json")
+DEFAULT_TDARR_ALLOWED_HOSTS = (
+    "tdarr",
+    "localhost",
+    "127.0.0.1",
+    "::1",
+)
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 logger = logging.getLogger(__name__)
 
@@ -46,11 +53,64 @@ def _normalize_input_subdir(raw_value: Any, flow_name: str) -> str:
     return value
 
 
+def _tdarr_allowed_hosts() -> set[str]:
+    raw = os.getenv("TDARR_ALLOWED_HOSTS")
+    if raw is None:
+        return set(DEFAULT_TDARR_ALLOWED_HOSTS)
+    return {
+        item.strip().casefold().rstrip(".")
+        for item in raw.split(",")
+        if item.strip()
+    }
+
+
+def _normalize_tdarr_server_url(raw_value: Any) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if any(character.isspace() for character in value):
+        raise ValueError("tdarr_server_url must not contain whitespace.")
+
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("tdarr_server_url is not a valid URL.") from exc
+
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        raise ValueError("tdarr_server_url must use http or https.")
+    if not parsed.netloc or not hostname:
+        raise ValueError("tdarr_server_url must include a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("tdarr_server_url must not include credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("tdarr_server_url must not include a query or fragment.")
+
+    normalized_host = hostname.casefold().rstrip(".")
+    candidates = {normalized_host}
+    if port is not None:
+        if ":" in normalized_host:
+            candidates.add(f"[{normalized_host}]:{port}")
+        else:
+            candidates.add(f"{normalized_host}:{port}")
+
+    allowed_hosts = _tdarr_allowed_hosts()
+    if not candidates.intersection(allowed_hosts):
+        raise ValueError(
+            f"Tdarr host '{normalized_host}' is not in TDARR_ALLOWED_HOSTS."
+        )
+
+    return value.rstrip("/")
+
+
 def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("Settings payload must be an object.")
 
-    tdarr_server_url = str(payload.get("tdarr_server_url", "")).strip()
+    tdarr_server_url = _normalize_tdarr_server_url(
+        payload.get("tdarr_server_url", "")
+    )
     tdarr_api_key = str(payload.get("tdarr_api_key", "")).strip()
     show_job_error_count = bool(payload.get("show_job_error_count", False))
 

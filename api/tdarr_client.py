@@ -361,8 +361,15 @@ class TdarrClient:
     def _request_json(self, method: str, path: str, **kwargs) -> Any:
         url = f"{self.server_url}{path}"
         response = requests.request(
-            method, url, headers=self.headers, timeout=self.timeout, **kwargs
+            method,
+            url,
+            headers=self.headers,
+            timeout=self.timeout,
+            allow_redirects=False,
+            **kwargs,
         )
+        if 300 <= response.status_code < 400:
+            raise RuntimeError("Tdarr redirect responses are not allowed.")
         response.raise_for_status()
         if not response.content:
             return {}

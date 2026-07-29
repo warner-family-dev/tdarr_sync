@@ -69,9 +69,17 @@ PUID=1000
 PGID=1000
 IMAGE_TAG=latest
 API_AUTH_TOKEN=replace-with-a-long-random-token
+WEB_AUTH_USERNAME=admin
+WEB_AUTH_PASSWORD=replace-with-a-different-long-random-password
+WEB_BIND_ADDRESS=127.0.0.1
+TDARR_ALLOWED_HOSTS=tdarr,localhost,127.0.0.1,::1
 ```
 
 `IMAGE_TAG` controls both the image pulled by Compose and the version label shown in the dashboard. For example, `IMAGE_TAG=latest` displays `latest (<image-publish-date>)`, while `IMAGE_TAG=v2.3.4` displays `v2.3.4 (<image-publish-date>)`.
+
+`WEB_AUTH_PASSWORD` is required and fails closed when blank or left as a sample placeholder. Use a value distinct from `API_AUTH_TOKEN`. Five failed logins from one client within five minutes trigger a 15-minute block. The dashboard uses HTTP Basic authentication, so keep `WEB_BIND_ADDRESS=127.0.0.1` for host-only access. To serve a trusted LAN, set `WEB_BIND_ADDRESS=0.0.0.0`; use an HTTPS reverse proxy before exposing it outside the host. If that proxy gives the browser a different public origin, add it to the comma-separated `WEB_ALLOWED_ORIGINS` value. Set `WEB_TRUST_PROXY=true` only when that proxy overwrites `X-Real-IP` or `X-Forwarded-For`; otherwise clients could spoof the rate-limit key.
+
+Before upgrading an existing installation, add `WEB_AUTH_PASSWORD` and include the hostname from its saved Tdarr URL in `TDARR_ALLOWED_HOSTS`. Missing dashboard credentials return `503`; an unlisted saved Tdarr host leaves the settings file untouched but is treated as unconfigured until the allowlist is corrected.
 
 Set host mounts:
 
@@ -125,7 +133,7 @@ If Sonarr reports files under `/tv` but the container sees the same files under 
 docker compose up -d
 ```
 
-Open the dashboard:
+Open the dashboard and sign in with `WEB_AUTH_USERNAME` and `WEB_AUTH_PASSWORD` when prompted:
 
 ```text
 http://localhost:3000
@@ -147,7 +155,7 @@ Authorization: Bearer <API_AUTH_TOKEN>
 
 Tdarr Sync needs Tdarr API access for queue and worker status in the dashboard.
 
-In Tdarr, enable API key authentication, copy the API key, then enter it in the Tdarr Sync dashboard settings.
+In Tdarr, enable API key authentication, copy the API key, then enter it in the Tdarr Sync dashboard settings. Before saving, add the exact Tdarr hostname to `TDARR_ALLOWED_HOSTS`. Entries may be hostnames/IP addresses (any port) or `host:port` values (that port only). Only `http` and `https` URLs without embedded credentials, queries, or fragments are accepted.
 
 ### 5. Configure Routing In The Dashboard
 
@@ -389,7 +397,7 @@ Current frontend stack:
 
 - Next.js 16
 - React 19
-- ESLint 9
+- ESLint 10
 - TypeScript 6
 
 ## Troubleshooting
@@ -397,6 +405,8 @@ Current frontend stack:
 | Symptom | Check |
 | --- | --- |
 | API will not start | `API_AUTH_TOKEN` must be set to a non-placeholder value. |
+| Dashboard returns 503 | Set a non-placeholder `WEB_AUTH_PASSWORD`; the username defaults to `admin`. |
+| Tdarr URL is rejected | Add its exact hostname or `host:port` to `TDARR_ALLOWED_HOSTS`. |
 | No files copied | Confirm routes exist, source tags exist, and the tag is not `remux`. |
 | Sonarr/Radarr files not found | Fix `SONARR_BASE_PATH`/`LOCAL_MOUNT_BASE_PATH` or `RADARR_BASE_PATH`/`RADARR_LOCAL_MOUNT_BASE_PATH`. |
 | Tdarr outputs do not restore | Confirm Tdarr writes completed files under `TDARR_OUTPUT_DIR` with the same relative path copied into input. |
@@ -408,6 +418,6 @@ Current frontend stack:
 
 - Do not commit `.env` or runtime data files.
 - Rotate any credential that was ever committed or pasted into public logs.
-- Keep `API_AUTH_TOKEN`, Sonarr/Radarr API keys, Tdarr API key, Telegram token, and restore password private.
-- The Compose file binds the API to `127.0.0.1` by default. Put the dashboard behind TLS/auth if exposing it beyond a trusted LAN.
+- Keep `API_AUTH_TOKEN`, `WEB_AUTH_PASSWORD`, Sonarr/Radarr API keys, Tdarr API key, Telegram token, and restore password private.
+- Compose binds both the API and dashboard to `127.0.0.1` by default. Dashboard Basic authentication is also required; use TLS whenever credentials cross a network.
 - Keep `API_CORS_ALLOW_ALL=false` unless you have a specific reason to expose the API cross-origin.

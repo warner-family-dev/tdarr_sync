@@ -4,7 +4,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("API_AUTH_TOKEN", "tdarr-sync-test-api-token")
 os.environ.setdefault(
@@ -227,6 +227,25 @@ class SyncStatusApiTests(unittest.TestCase):
 
 
 class TdarrClientTests(unittest.TestCase):
+    def test_tdarr_requests_do_not_follow_redirects(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+        response = Mock(status_code=302, content=b"")
+
+        with (
+            patch("api.tdarr_client.requests.request", return_value=response) as request,
+            self.assertRaisesRegex(RuntimeError, "redirect responses are not allowed"),
+        ):
+            client._request_json("GET", "/api/v2/status")
+
+        request.assert_called_once_with(
+            "GET",
+            "http://tdarr.example/api/v2/status",
+            headers={"x-api-key": "tapi_test"},
+            timeout=4,
+            allow_redirects=False,
+        )
+        response.raise_for_status.assert_not_called()
+
     def test_stats_request_uses_get_all_and_stats_failure_is_nonfatal(self):
         client = TdarrClient("http://tdarr.example", "tapi_test")
         calls = []

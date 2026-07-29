@@ -790,15 +790,25 @@ class RestoreService:
 
     def _sonarr_get(self, endpoint: str, params: dict | None = None):
         url = self.config.sonarr_url.rstrip("/") + "/api/v3" + endpoint
-        query = dict(params or {})
-        query["apikey"] = self.config.sonarr_api_key
+        headers = {"X-Api-Key": self.config.sonarr_api_key}
         try:
-            response = requests.get(url, params=query, timeout=20)
+            response = requests.get(
+                url,
+                params=dict(params or {}),
+                headers=headers,
+                timeout=20,
+                allow_redirects=False,
+            )
+            if 300 <= response.status_code < 400:
+                raise RestoreError("Sonarr redirect responses are not allowed.")
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
+            status_code = (
+                exc.response.status_code if exc.response is not None else "unknown"
+            )
             raise RestoreError(
-                f"Sonarr request failed ({exc.response.status_code}): {exc}"
+                f"Sonarr request failed with HTTP status {status_code}."
             ) from exc
         except requests.RequestException as exc:
-            raise RestoreError(f"Sonarr request failed: {exc}") from exc
+            raise RestoreError("Sonarr request failed due to a network error.") from exc

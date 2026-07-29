@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG PYTHON_VERSION=3.12
-ARG NODE_VERSION=20
+ARG NODE_VERSION=24
 ARG S6_OVERLAY_VERSION=3.2.1.0
 
 FROM node:${NODE_VERSION}-bookworm-slim AS web-deps

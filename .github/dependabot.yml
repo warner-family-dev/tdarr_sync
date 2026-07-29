@@ -28,15 +28,15 @@ updates:
       next-stack:
         patterns:
           - "next"
-          - "eslint-config-next"
+          - "@next/eslint-plugin-next"
       frontend-tooling:
         patterns:
           - "typescript"
+          - "typescript-eslint"
           - "@types/node"
-    ignore:
-      - dependency-name: "eslint"
-        update-types:
-          - "version-update:semver-major"
+          - "eslint"
+          - "@eslint/*"
+          - "eslint-plugin-react-hooks"
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -45,17 +45,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: docker
-    directory: "/docker"
+    directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-
-  - package-ecosystem: docker
-    directory: "/web"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    ignore:
-      - dependency-name: "node"
-        update-types:
-          - "version-update:semver-major"

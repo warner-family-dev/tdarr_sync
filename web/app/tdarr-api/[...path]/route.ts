@@ -1,3 +1,9 @@
+import {
+  authenticateWebRequest,
+  isTrustedMutationOrigin,
+  webAuthResponse,
+} from "../../../auth";
+
 export const dynamic = "force-dynamic";
 
 type RouteContext = {
@@ -61,6 +67,15 @@ function responseHeaders(response: Response): Headers {
 }
 
 async function proxyRequest(request: Request, context: RouteContext): Promise<Response> {
+  const authResult = authenticateWebRequest(request);
+  if (authResult !== "authenticated") return webAuthResponse(authResult);
+  if (!isTrustedMutationOrigin(request)) {
+    return Response.json(
+      { detail: "Request origin is not allowed." },
+      { status: 403, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   let token: string;
   try {
     token = apiToken();

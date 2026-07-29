@@ -2,16 +2,26 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+### Added
+- Added dashboard-wide HTTP Basic authentication with failed-login throttling and same-origin checks for state-changing proxy requests.
+- Added an explicit Tdarr hostname allowlist to prevent runtime routing settings from targeting unapproved hosts.
+
 ### Changed
 - Modernized Python type annotations, imports, and formatting to satisfy the current Ruff ruleset across application and test code.
 - Upgraded Next.js and its ESLint configuration to 16.2.12, React and React DOM to 19.2.8, and refreshed compatible frontend type and transitive dependencies.
+- Upgraded the container and CI toolchain to Node.js 24, migrated frontend linting to ESLint 10 with direct plugins, and expanded CI auditing to include development dependencies.
+- Updated Dependabot grouping and Docker coverage to match the current repository layout and supported lint toolchain.
+- Bound the dashboard to localhost by default, with an explicit `WEB_BIND_ADDRESS` setting for intentional LAN exposure.
 
 ### Fixed
 - Replaced overly broad exception handlers with targeted filesystem, network, parsing, and database errors while retaining explicit process-boundary safeguards.
 - Bound copy-progress callbacks to the active media item and corrected smaller lint findings in runtime settings, timestamps, API defaults, and tests.
+- Moved Sonarr and Radarr API keys from query strings into request headers, disabled credential-forwarding redirects, and sanitized upstream request failures.
+- Disabled redirects for Tdarr API requests so allowlisted destinations cannot redirect status checks to another host.
 
 ### Security
 - Remediated the production Next.js, PostCSS, and Sharp advisories by pinning fixed releases and verified that the production frontend and Python dependency audits report no known vulnerabilities.
+- Removed the vulnerable legacy ESLint dependency path and verified the replacement frontend lockfile reports no known npm vulnerabilities.
 
 ## [2.3.7] - 2026-07-07
 ### Changed

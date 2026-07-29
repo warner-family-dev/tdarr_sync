@@ -227,9 +227,17 @@ def _arr_get(
     base_url: str, api_key: str, endpoint: str, params: dict | None = None
 ) -> requests.Response:
     query = dict(params or {})
-    query["apikey"] = api_key
     url = base_url.rstrip("/") + "/api/v3" + endpoint
-    response = requests.get(url, params=query, timeout=20)
+    headers = {"X-Api-Key": api_key}
+    response = requests.get(
+        url,
+        params=query,
+        headers=headers,
+        timeout=20,
+        allow_redirects=False,
+    )
+    if 300 <= response.status_code < 400:
+        raise RuntimeError("ARR redirect responses are not allowed.")
     response.raise_for_status()
     return response
 

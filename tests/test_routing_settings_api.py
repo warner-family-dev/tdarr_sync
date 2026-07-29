@@ -29,6 +29,25 @@ def test_get_routing_settings_does_not_return_api_key(tmp_path, monkeypatch):
     assert "tapi_secret_value" not in response.text
 
 
+def test_rejects_unlisted_tdarr_host(tmp_path, monkeypatch):
+    settings_file = tmp_path / "runtime_settings.json"
+    monkeypatch.setattr(settings, "runtime_settings_file", settings_file)
+
+    response = TestClient(app).put(
+        "/settings/routing",
+        headers=_auth_headers(),
+        json={
+            "tdarr_server_url": "http://metadata.internal/latest",
+            "tdarr_api_key": "not-a-secret-test-value",
+            "routes": [],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "TDARR_ALLOWED_HOSTS" in response.json()["detail"]
+    assert not settings_file.exists()
+
+
 def test_blank_routing_api_key_preserves_existing_secret(tmp_path, monkeypatch):
     settings_file = tmp_path / "runtime_settings.json"
     save_runtime_settings(
