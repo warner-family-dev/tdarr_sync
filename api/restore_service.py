@@ -1,17 +1,21 @@
 import logging
 import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
 
+from runtime_settings import load_runtime_settings
+
 from . import db
 from .schemas import to_iso
 from .settings import settings
 
 logger = logging.getLogger("tdarr_sync.restore")
+SERIES_CATALOG_CACHE_SECONDS = 30.0
 
 
 class RestoreError(Exception):
@@ -45,7 +49,7 @@ class RestoreConfig:
     tdarr_output_dir: Path
     sonarr_url: str
     sonarr_api_key: str
-    sonarr_tag_name: str | None
+    sonarr_tag_names: tuple[str, ...]
     sonarr_base_path: Path
     local_mount_base_path: Path
     admin_password: str
@@ -163,6 +167,13 @@ class RestoreService:
     def __init__(self):
         self.config = self._load_config()
         self._base_dir_resolved = self.config.base_dir.resolve()
+        self._base_dir_lexical = Path(
+            os.path.abspath(os.path.normpath(self.config.base_dir))
+        )
+        self._series_catalog_lock = threading.Lock()
+        self._series_catalog_cache: (
+            tuple[float, int | None, list[SeriesEntry]] | None
+        ) = None
 
     def _load_config(self) -> RestoreConfig:
         try:
@@ -182,7 +193,16 @@ class RestoreService:
         move_originals = _bool_env("MOVE_ORIGINAL_FILES", False)
         rename_originals = _bool_env("RENAME_ORIGINAL_FILES", True)
         tdarr_output_dir = Path(os.getenv("TDARR_OUTPUT_DIR", "/media/tdarr/output"))
-        sonarr_tag_name = os.getenv("SONARR_TAG_NAME") or None
+        runtime_settings = load_runtime_settings(settings.runtime_settings_file)
+        sonarr_tag_names = tuple(
+            dict.fromkeys(
+                str(route.get("tag", "")).strip()
+                for route in runtime_settings.get("routes", [])
+                if isinstance(route, dict)
+                and str(route.get("source", "")).casefold() == "sonarr"
+                and str(route.get("tag", "")).strip()
+            )
+        )
         sonarr_base_path = Path(os.getenv("SONARR_BASE_PATH", "/tv"))
         local_mount_base_path = Path(
             os.getenv("LOCAL_MOUNT_BASE_PATH", "/mnt/media-videos")
@@ -204,7 +224,7 @@ class RestoreService:
             tdarr_output_dir=tdarr_output_dir,
             sonarr_url=sonarr_url,
             sonarr_api_key=sonarr_api_key,
-            sonarr_tag_name=sonarr_tag_name,
+            sonarr_tag_names=sonarr_tag_names,
             sonarr_base_path=sonarr_base_path,
             local_mount_base_path=local_mount_base_path,
             admin_password=admin_password,
@@ -218,9 +238,28 @@ class RestoreService:
         return db.fetch_all_processed(self.config.state_db_file)
 
     def series_catalog(self) -> list[SeriesEntry]:
-        processed_map = self._load_processed_map()
-        series_list = self._fetch_series_list()
-        return self._build_entries(series_list, processed_map)
+        with self._series_catalog_lock:
+            now = time.monotonic()
+            database_mtime = self._state_database_mtime_ns()
+            cached = self._series_catalog_cache
+            if (
+                cached is not None
+                and now - cached[0] < SERIES_CATALOG_CACHE_SECONDS
+                and cached[1] == database_mtime
+            ):
+                return cached[2]
+
+            processed_map = self._load_processed_map()
+            series_list = self._fetch_series_list()
+            entries = self._build_entries(series_list, processed_map)
+            self._series_catalog_cache = (now, database_mtime, entries)
+            return entries
+
+    def _state_database_mtime_ns(self) -> int | None:
+        try:
+            return self.config.state_db_file.stat().st_mtime_ns
+        except OSError:
+            return None
 
     def restore(
         self,
@@ -490,7 +529,7 @@ class RestoreService:
                 continue
 
             translated = self._translate_path(path)
-            resolved = self._resolve_under_base(translated)
+            resolved = self._catalog_path_under_base(translated)
             if resolved is None:
                 continue
 
@@ -671,6 +710,26 @@ class RestoreService:
             return None
         return resolved
 
+    def _catalog_path_under_base(self, candidate: Path) -> Path | None:
+        """Normalize a catalog path without resolving every component on disk."""
+        try:
+            combined = (
+                candidate
+                if candidate.is_absolute()
+                else self._base_dir_lexical.joinpath(candidate)
+            )
+            normalized = Path(os.path.abspath(os.path.normpath(combined)))
+        except (OSError, TypeError, ValueError):
+            return None
+
+        for base in (self._base_dir_lexical, self._base_dir_resolved):
+            try:
+                relative = normalized.relative_to(base)
+            except ValueError:
+                continue
+            return self._base_dir_resolved.joinpath(relative)
+        return None
+
     def _translate_path(self, sonarr_path: str) -> Path:
         path = Path(sonarr_path)
         try:
@@ -763,30 +822,41 @@ class RestoreService:
             counter += 1
 
     def _fetch_series_list(self) -> list[dict]:
-        tag_id = self._find_tag_id()
+        tag_ids = self._find_tag_ids()
         series = self._sonarr_get("/series")
-        if tag_id is None:
+        if tag_ids is None:
             return series
-        filtered = []
-        for item in series:
-            tags = item.get("tags") or []
-            if tag_id in tags:
-                filtered.append(item)
-        return filtered
+        return [
+            item
+            for item in series
+            if tag_ids.intersection(item.get("tags") or [])
+        ]
 
     def _fetch_episode_files(self, series_id: int) -> list[dict]:
         return self._sonarr_get("/episodefile", params={"seriesId": series_id})
 
-    def _find_tag_id(self) -> int | None:
-        if not self.config.sonarr_tag_name:
+    def _find_tag_ids(self) -> set[int] | None:
+        if not self.config.sonarr_tag_names:
             return None
-        tags = self._sonarr_get("/tag")
-        for tag in tags:
-            if str(tag.get("label", "")).lower() == self.config.sonarr_tag_name.lower():
-                return int(tag.get("id"))
-        raise RestoreNotFoundError(
-            f"Tag '{self.config.sonarr_tag_name}' not found in Sonarr. Update SONARR_TAG_NAME or add the tag."
-        )
+        tags_by_name = {
+            str(tag.get("label", "")).casefold(): int(tag.get("id"))
+            for tag in self._sonarr_get("/tag")
+        }
+        missing = [
+            tag_name
+            for tag_name in self.config.sonarr_tag_names
+            if tag_name.casefold() not in tags_by_name
+        ]
+        if missing:
+            missing_names = ", ".join(missing)
+            raise RestoreNotFoundError(
+                f"Tag(s) {missing_names} not found in Sonarr. "
+                "Update routing in Settings or add the tag(s)."
+            )
+        return {
+            tags_by_name[tag_name.casefold()]
+            for tag_name in self.config.sonarr_tag_names
+        }
 
     def _sonarr_get(self, endpoint: str, params: dict | None = None):
         url = self.config.sonarr_url.rstrip("/") + "/api/v3" + endpoint

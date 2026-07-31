@@ -32,6 +32,40 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(payload["routes"][0]["input_subdir"], "reality-tv-to-720p")
         self.assertTrue(payload["show_job_error_count"])
 
+    def test_normalize_bound_tdarr_library_route(self):
+        payload = normalize_runtime_settings_payload(
+            {
+                "routes": [
+                    {
+                        "source": "sonarr",
+                        "tag": "transcode",
+                        "tdarr_library_id": "library-720",
+                        "tdarr_library_name": "720p",
+                        "tdarr_flow_id": "flow-clean",
+                        "flow_name": "720p Cleaned",
+                        "input_subdir": "720p",
+                    }
+                ]
+            }
+        )
+        self.assertEqual(payload["routes"][0]["tdarr_library_id"], "library-720")
+        self.assertEqual(payload["routes"][0]["flow_name"], "720p Cleaned")
+        self.assertEqual(payload["routes"][0]["input_subdir"], "720p")
+
+    def test_rejects_incomplete_bound_tdarr_library_route(self):
+        with self.assertRaisesRegex(ValueError, "server-resolved Tdarr"):
+            normalize_runtime_settings_payload(
+                {
+                    "routes": [
+                        {
+                            "source": "sonarr",
+                            "tag": "transcode",
+                            "tdarr_library_id": "library-720",
+                        }
+                    ]
+                }
+            )
+
     def test_rejects_duplicate_source_tag(self):
         with self.assertRaises(ValueError):
             normalize_runtime_settings_payload(

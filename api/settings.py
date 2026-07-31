@@ -117,12 +117,10 @@ class Settings:
             "cors_allow_origins": self.cors_allow_origins,
             "sonarr": {
                 "url": os.getenv("SONARR_URL", ""),
-                "tag_name": os.getenv("SONARR_TAG_NAME", ""),
                 "api_key_configured": bool(os.getenv("SONARR_API_KEY")),
             },
             "radarr": {
                 "url": os.getenv("RADARR_URL", ""),
-                "tag_name": os.getenv("RADARR_TAG_NAME", ""),
                 "api_key_configured": bool(os.getenv("RADARR_API_KEY")),
             },
             "tdarr": {

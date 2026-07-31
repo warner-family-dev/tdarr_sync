@@ -67,14 +67,13 @@ Set these first:
 TZ=America/Chicago
 PUID=1000
 PGID=1000
-IMAGE_TAG=latest
 API_AUTH_TOKEN=replace-with-a-long-random-token
 WEB_AUTH_USERNAME=admin
 WEB_AUTH_PASSWORD=replace-with-a-different-long-random-password
 WEB_BIND_ADDRESS=127.0.0.1
 ```
 
-`IMAGE_TAG` controls both the image pulled by Compose and the version label shown in the dashboard. For example, `IMAGE_TAG=latest` displays `latest (<image-publish-date>)`, while `IMAGE_TAG=v2.3.4` displays `v2.3.4 (<image-publish-date>)`.
+The dashboard version label is generated from immutable build metadata. Builds from `main` display `main`, while development branches such as `dev/v2.3.8` display `v2.3.8`; it cannot be selected through `.env`.
 
 `WEB_AUTH_PASSWORD` is required and fails closed when blank or left as a sample placeholder. Use a value distinct from `API_AUTH_TOKEN`. Five failed logins from one client within five minutes trigger a 15-minute block. The dashboard uses HTTP Basic authentication, so keep `WEB_BIND_ADDRESS=127.0.0.1` for host-only access. To serve a trusted LAN, set `WEB_BIND_ADDRESS=0.0.0.0`; use an HTTPS reverse proxy before exposing it outside the host. If that proxy gives the browser a different public origin, add it to the comma-separated `WEB_ALLOWED_ORIGINS` value. Set `WEB_TRUST_PROXY=true` only when that proxy overwrites `X-Real-IP` or `X-Forwarded-For`; otherwise clients could spoof the rate-limit key.
 
@@ -168,10 +167,9 @@ Open **Settings** in the Tdarr Sync dashboard and configure:
 | Tdarr API key | Stored server-side only; it is not returned to the browser after save. |
 | Source | `sonarr` or `radarr`. |
 | Tag | The Sonarr/Radarr tag that selects files for this route. |
-| Flow name | Human-readable flow label. Used to derive the input subfolder when `Input subdir` is blank. |
-| Input subdir | Single safe folder name under `TDARR_INPUT_DIR`. |
+| Tdarr library / flow | Selects a live Tdarr library by stable ID. The linked flow and library-folder name are loaded from Tdarr and cannot be typed manually. |
 
-Route order matters. The first matching tag for a source wins.
+Route order matters. The first matching tag for a source wins. The source folder names come from `SONARR_INPUT_FOLDER` and `RADARR_INPUT_FOLDER`. Route tags, library IDs, linked flow IDs, and server-resolved display names are stored in runtime settings; `.env` flow-name fallbacks are not used. If no routes are configured, the sync safely copies nothing.
 
 Current sources are `sonarr` and `radarr`. To support another source, the application would need a new source adapter, route source validation, copy logic, restore path resolution, and dashboard/API schema updates.
 
@@ -182,15 +180,15 @@ The tag `remux` is temporarily blocked by the sync pipeline. Any route using tha
 Tdarr Sync copies files into this structure:
 
 ```text
-<TDARR_INPUT_DIR>/<input_subdir>/__sonarr_input__/<relative-library-path>
-<TDARR_INPUT_DIR>/<input_subdir>/__radarr_input__/<relative-library-path>
+<TDARR_INPUT_DIR>/<SONARR_INPUT_FOLDER>/<tdarr-library-folder>/<relative-library-path>
+<TDARR_INPUT_DIR>/<RADARR_INPUT_FOLDER>/<tdarr-library-folder>/<relative-library-path>
 ```
 
 Example:
 
 ```text
-/media/tdarr/input/hevc-main/__sonarr_input__/Show/Season 01/Episode.mkv
-/media/tdarr/input/movie-hevc/__radarr_input__/Movie (2024)/Movie.mkv
+/media/tdarr/input/Sonarr/720p/Show/Season 01/Episode.mkv
+/media/tdarr/input/Radarr/1080p/Movie (2024)/Movie.mkv
 ```
 
 Configure Tdarr so the matching input folders are watched and completed files are written to `TDARR_OUTPUT_DIR` with the same relative path structure. Restore depends on that relative path to decide whether the output belongs back in the Sonarr or Radarr library.
@@ -254,7 +252,7 @@ docker buildx build --platform linux/amd64 --load -f Dockerfile -t tdarr-sync:lo
 ### Copy Phase
 
 - Loads UI routes from `/config/runtime_settings.json`.
-- Falls back to `SONARR_TAG_NAME` and `RADARR_TAG_NAME` only when no UI routes exist.
+- Uses only the source tags and stable Tdarr library IDs configured in Settings; if no routes exist, copies nothing.
 - Reads Sonarr/Radarr items and tags through their APIs.
 - Copies matching files into Tdarr input subfolders.
 - Leaves source files untouched during copy.

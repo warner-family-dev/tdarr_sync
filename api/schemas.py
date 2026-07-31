@@ -163,18 +163,43 @@ class SyncRunRequest(BaseModel):
     selections: list[SyncSelectionPayload] | None = None
 
 
-class TagFlowRoute(BaseModel):
+class TagFlowRouteUpdate(BaseModel):
     source: Literal["sonarr", "radarr"]
     tag: str = Field(..., min_length=1)
-    flow_name: str = Field(..., min_length=1)
-    input_subdir: str | None = None
+    tdarr_library_id: str = Field(..., min_length=1)
+
+
+class TagFlowRoute(BaseModel):
+    source: Literal["sonarr", "radarr"]
+    tag: str
+    tdarr_library_id: str = ""
+    tdarr_library_name: str = ""
+    tdarr_flow_id: str = ""
+    flow_name: str = ""
+    input_subdir: str = ""
+
+
+class TdarrRoutingTarget(BaseModel):
+    tdarr_library_id: str
+    tdarr_library_name: str
+    tdarr_library_folder: str
+    tdarr_flow_id: str
+    flow_name: str
+    input_subdir: str
+
+
+class TdarrRoutingTargetsResponse(BaseModel):
+    configured: bool = False
+    reachable: bool = False
+    error: str | None = None
+    targets: list[TdarrRoutingTarget] = Field(default_factory=list)
 
 
 class RoutingSettingsUpdate(BaseModel):
     tdarr_server_url: str = ""
     tdarr_api_key: str | None = None
     show_job_error_count: bool = False
-    routes: list[TagFlowRoute] = Field(default_factory=list)
+    routes: list[TagFlowRouteUpdate] = Field(default_factory=list)
 
 
 class RoutingSettingsResponse(BaseModel):

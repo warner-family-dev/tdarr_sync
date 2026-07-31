@@ -411,5 +411,63 @@ class TdarrClientTests(unittest.TestCase):
         self.assertNotIn("JobsJSONDB", requested_collections)
 
 
+    def test_routing_targets_join_libraries_to_stable_flow_ids(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+
+        def fake_collection(collection):
+            if collection == "FlowsJSONDB":
+                return [
+                    {"_id": "flow-1080", "name": "1080p"},
+                    {"_id": "flow-720", "name": "720p Cleaned"},
+                ]
+            if collection == "LibrarySettingsJSONDB":
+                return [
+                    {
+                        "_id": "library-720",
+                        "name": "720p",
+                        "folder": "/media/input/720p",
+                        "flowId": "flow-720",
+                    },
+                    {
+                        "_id": "library-1080",
+                        "name": "1080p",
+                        "folder": "/media/input/1080p/",
+                        "flowId": "flow-1080",
+                    },
+                    {
+                        "_id": "unassigned",
+                        "name": "No flow",
+                        "folder": "/media/input/no-flow",
+                        "flowId": "missing",
+                    },
+                ]
+            raise AssertionError(collection)
+
+        with patch.object(client, "_fetch_collection", side_effect=fake_collection):
+            targets = client.fetch_routing_targets()
+
+        self.assertEqual(
+            targets,
+            [
+                {
+                    "tdarr_library_id": "library-1080",
+                    "tdarr_library_name": "1080p",
+                    "tdarr_library_folder": "/media/input/1080p/",
+                    "tdarr_flow_id": "flow-1080",
+                    "flow_name": "1080p",
+                    "input_subdir": "1080p",
+                },
+                {
+                    "tdarr_library_id": "library-720",
+                    "tdarr_library_name": "720p",
+                    "tdarr_library_folder": "/media/input/720p",
+                    "tdarr_flow_id": "flow-720",
+                    "flow_name": "720p Cleaned",
+                    "input_subdir": "720p",
+                },
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

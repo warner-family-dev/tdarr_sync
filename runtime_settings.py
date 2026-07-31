@@ -156,9 +156,23 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
         if not tag:
             raise ValueError(f"Route #{idx + 1} requires a tag.")
 
+        tdarr_library_id = str(route.get("tdarr_library_id", "")).strip()
+        tdarr_library_name = str(route.get("tdarr_library_name", "")).strip()
+        tdarr_flow_id = str(route.get("tdarr_flow_id", "")).strip()
         flow_name = str(route.get("flow_name", "")).strip()
-        if not flow_name:
-            raise ValueError(f"Route #{idx + 1} requires a flow_name.")
+        if tdarr_library_id:
+            if not tdarr_library_name:
+                raise ValueError(
+                    f"Route #{idx + 1} requires a server-resolved Tdarr library name."
+                )
+            if not tdarr_flow_id or not flow_name:
+                raise ValueError(
+                    f"Route #{idx + 1} requires a server-resolved Tdarr flow."
+                )
+        elif not flow_name:
+            raise ValueError(
+                f"Route #{idx + 1} requires a Tdarr library selection."
+            )
 
         dedupe_key = (source, tag.lower())
         if dedupe_key in seen:
@@ -170,6 +184,9 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
             {
                 "source": source,
                 "tag": tag,
+                "tdarr_library_id": tdarr_library_id,
+                "tdarr_library_name": tdarr_library_name,
+                "tdarr_flow_id": tdarr_flow_id,
                 "flow_name": flow_name,
                 "input_subdir": input_subdir,
             }

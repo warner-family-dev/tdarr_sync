@@ -57,8 +57,8 @@ export default function SettingsLauncher() {
     if (!version) {
       return "loading-version";
     }
-    const displayTag = version.image_tag || version.git_version || "unknown";
-    const displayDate = version.image_published_date || version.commit_date || "unknown";
+    const displayTag = version.git_version || version.image_tag || "unknown";
+    const displayDate = version.commit_date || version.image_published_date || "unknown";
     return `${displayTag} (${displayDate})`;
   }, [version]);
 
