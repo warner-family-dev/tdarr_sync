@@ -1,7 +1,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from runtime_settings import (
     load_runtime_settings,
@@ -59,11 +58,11 @@ class RuntimeSettingsTests(unittest.TestCase):
                 }
             )
 
-    def test_rejects_tdarr_url_with_unlisted_host(self):
-        with self.assertRaisesRegex(ValueError, "TDARR_ALLOWED_HOSTS"):
-            normalize_runtime_settings_payload(
-                {"tdarr_server_url": "http://metadata.internal/latest", "routes": []}
-            )
+    def test_accepts_tdarr_host_configured_in_settings(self):
+        payload = normalize_runtime_settings_payload(
+            {"tdarr_server_url": "https://tdarr.example.test", "routes": []}
+        )
+        self.assertEqual(payload["tdarr_server_url"], "https://tdarr.example.test")
 
     def test_rejects_tdarr_url_with_unsafe_scheme_or_credentials(self):
         for url in (
@@ -76,19 +75,11 @@ class RuntimeSettingsTests(unittest.TestCase):
                     {"tdarr_server_url": url, "routes": []}
                 )
 
-    def test_exact_host_port_allowlist_is_supported(self):
-        with patch.dict(
-            "os.environ", {"TDARR_ALLOWED_HOSTS": "tdarr.local:8266"}
-        ):
-            payload = normalize_runtime_settings_payload(
-                {"tdarr_server_url": "http://tdarr.local:8266/", "routes": []}
-            )
-            self.assertEqual(payload["tdarr_server_url"], "http://tdarr.local:8266")
-
-            with self.assertRaises(ValueError):
-                normalize_runtime_settings_payload(
-                    {"tdarr_server_url": "http://tdarr.local:8267", "routes": []}
-                )
+    def test_accepts_tdarr_url_with_explicit_port(self):
+        payload = normalize_runtime_settings_payload(
+            {"tdarr_server_url": "http://tdarr.local:8266/", "routes": []}
+        )
+        self.assertEqual(payload["tdarr_server_url"], "http://tdarr.local:8266")
 
     def test_save_and_load_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

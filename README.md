@@ -72,7 +72,6 @@ API_AUTH_TOKEN=replace-with-a-long-random-token
 WEB_AUTH_USERNAME=admin
 WEB_AUTH_PASSWORD=replace-with-a-different-long-random-password
 WEB_BIND_ADDRESS=127.0.0.1
-TDARR_ALLOWED_HOSTS=tdarr,localhost,127.0.0.1,::1
 ```
 
 `IMAGE_TAG` controls both the image pulled by Compose and the version label shown in the dashboard. For example, `IMAGE_TAG=latest` displays `latest (<image-publish-date>)`, while `IMAGE_TAG=v2.3.4` displays `v2.3.4 (<image-publish-date>)`.
@@ -81,7 +80,7 @@ TDARR_ALLOWED_HOSTS=tdarr,localhost,127.0.0.1,::1
 
 The Settings menu includes **Dashboard Access** controls for skipping Basic authentication on explicitly trusted IPv4 or IPv6 CIDRs. This bypass is disabled by default and requires trusting proxy client-IP headers. Enable it only when Traefik or Cloudflare overwrites `CF-Connecting-IP`, `X-Forwarded-For`, or `X-Real-IP`, and prevent untrusted clients from reaching the dashboard port directly. For local clients using a Cloudflare-backed hostname, use split DNS so they reach Traefik locally; otherwise Cloudflare normally presents the client public IP rather than its private LAN address.
 
-Before upgrading an existing installation, add `WEB_AUTH_PASSWORD` and include the hostname from its saved Tdarr URL in `TDARR_ALLOWED_HOSTS`. Missing dashboard credentials return `503`; an unlisted saved Tdarr host leaves the settings file untouched but is treated as unconfigured until the allowlist is corrected.
+Before upgrading an existing installation, add `WEB_AUTH_PASSWORD`. Missing dashboard credentials return `503`.
 
 Set host mounts:
 
@@ -157,7 +156,7 @@ Authorization: Bearer <API_AUTH_TOKEN>
 
 Tdarr Sync needs Tdarr API access for queue and worker status in the dashboard.
 
-In Tdarr, enable API key authentication, copy the API key, then enter it in the Tdarr Sync dashboard settings. Before saving, add the exact Tdarr hostname to `TDARR_ALLOWED_HOSTS`. Entries may be hostnames/IP addresses (any port) or `host:port` values (that port only). Only `http` and `https` URLs without embedded credentials, queries, or fragments are accepted.
+In Tdarr, enable API key authentication, copy the API key, then enter its URL and key in the Tdarr Sync dashboard settings. Only `http` and `https` URLs without embedded credentials, queries, fragments, whitespace, or malformed ports are accepted.
 
 ### 5. Configure Routing In The Dashboard
 
@@ -408,7 +407,7 @@ Current frontend stack:
 | --- | --- |
 | API will not start | `API_AUTH_TOKEN` must be set to a non-placeholder value. |
 | Dashboard returns 503 | Set a non-placeholder `WEB_AUTH_PASSWORD`; the username defaults to `admin`. |
-| Tdarr URL is rejected | Add its exact hostname or `host:port` to `TDARR_ALLOWED_HOSTS`. |
+| Tdarr URL is rejected | Use a valid `http` or `https` URL without embedded credentials, queries, fragments, whitespace, or a malformed port. |
 | No files copied | Confirm routes exist, source tags exist, and the tag is not `remux`. |
 | Sonarr/Radarr files not found | Fix `SONARR_BASE_PATH`/`LOCAL_MOUNT_BASE_PATH` or `RADARR_BASE_PATH`/`RADARR_LOCAL_MOUNT_BASE_PATH`. |
 | Tdarr outputs do not restore | Confirm Tdarr writes completed files under `TDARR_OUTPUT_DIR` with the same relative path copied into input. |

@@ -13,12 +13,6 @@ from urllib.parse import urlsplit
 ALLOWED_SOURCES = {"sonarr", "radarr"}
 MAX_WEB_AUTH_TRUSTED_NETWORKS = 32
 DEFAULT_RUNTIME_SETTINGS_FILE = Path("/data/runtime_settings.json")
-DEFAULT_TDARR_ALLOWED_HOSTS = (
-    "tdarr",
-    "localhost",
-    "127.0.0.1",
-    "::1",
-)
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 logger = logging.getLogger(__name__)
 
@@ -85,16 +79,6 @@ def _normalize_web_auth_trusted_networks(raw_value: Any) -> list[str]:
     return normalized
 
 
-def _tdarr_allowed_hosts() -> set[str]:
-    raw = os.getenv("TDARR_ALLOWED_HOSTS")
-    if raw is None:
-        return set(DEFAULT_TDARR_ALLOWED_HOSTS)
-    return {
-        item.strip().casefold().rstrip(".")
-        for item in raw.split(",")
-        if item.strip()
-    }
-
 
 def _normalize_tdarr_server_url(raw_value: Any) -> str:
     value = str(raw_value or "").strip()
@@ -119,19 +103,8 @@ def _normalize_tdarr_server_url(raw_value: Any) -> str:
     if parsed.query or parsed.fragment:
         raise ValueError("tdarr_server_url must not include a query or fragment.")
 
-    normalized_host = hostname.casefold().rstrip(".")
-    candidates = {normalized_host}
-    if port is not None:
-        if ":" in normalized_host:
-            candidates.add(f"[{normalized_host}]:{port}")
-        else:
-            candidates.add(f"{normalized_host}:{port}")
-
-    allowed_hosts = _tdarr_allowed_hosts()
-    if not candidates.intersection(allowed_hosts):
-        raise ValueError(
-            f"Tdarr host '{normalized_host}' is not in TDARR_ALLOWED_HOSTS."
-        )
+    if port == 0:
+        raise ValueError("tdarr_server_url must use a valid non-zero port.")
 
     return value.rstrip("/")
 

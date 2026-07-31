@@ -21,6 +21,3 @@ os.environ.setdefault(
 os.environ.setdefault(
     "LOG_FILE", str(Path(tempfile.gettempdir()) / "tdarr-sync-test.log")
 )
-os.environ.setdefault(
-    "TDARR_ALLOWED_HOSTS", "tdarr.local,tdarr-new.local,192.168.4.55"
-)
