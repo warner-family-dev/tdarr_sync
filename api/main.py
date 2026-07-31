@@ -156,6 +156,16 @@ def _routing_settings_response(data: dict) -> schemas.RoutingSettingsResponse:
     )
 
 
+def _web_auth_settings_response(data: dict) -> schemas.WebAuthSettingsResponse:
+    return schemas.WebAuthSettingsResponse(
+        enabled=bool(data.get("web_auth_bypass_enabled", False)),
+        trust_proxy_headers=bool(
+            data.get("web_auth_trust_proxy_headers", False)
+        ),
+        trusted_networks=data.get("web_auth_trusted_networks", []),
+    )
+
+
 @app.get("/settings/routing", response_model=schemas.RoutingSettingsResponse)
 def get_routing_settings():
     data = load_runtime_settings(settings.runtime_settings_file)
@@ -167,6 +177,7 @@ def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
     body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     existing = load_runtime_settings(settings.runtime_settings_file)
     submitted_api_key = str(body.get("tdarr_api_key") or "").strip()
+    body = {**existing, **body}
     body["tdarr_api_key"] = submitted_api_key or existing.get("tdarr_api_key", "")
     try:
         saved = save_runtime_settings(body, settings.runtime_settings_file)
@@ -174,6 +185,36 @@ def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
     return _routing_settings_response(saved)
+
+
+@app.get("/settings/web-auth", response_model=schemas.WebAuthSettingsResponse)
+def get_web_auth_settings():
+    data = load_runtime_settings(settings.runtime_settings_file)
+    return _web_auth_settings_response(data)
+
+
+@app.put("/settings/web-auth", response_model=schemas.WebAuthSettingsResponse)
+def update_web_auth_settings(payload: schemas.WebAuthSettingsUpdate):
+    body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    existing = load_runtime_settings(settings.runtime_settings_file)
+    merged = {
+        **existing,
+        "web_auth_bypass_enabled": bool(body.get("enabled", False)),
+        "web_auth_trust_proxy_headers": bool(
+            body.get("trust_proxy_headers", False)
+        ),
+        "web_auth_trusted_networks": body.get("trusted_networks", []),
+    }
+    try:
+        saved = save_runtime_settings(merged, settings.runtime_settings_file)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "Updated web authentication settings (trusted-network bypass: %s, networks: %d)",
+        saved.get("web_auth_bypass_enabled", False),
+        len(saved.get("web_auth_trusted_networks", [])),
+    )
+    return _web_auth_settings_response(saved)
 
 
 @app.get("/processed-files", response_model=list[schemas.ProcessedFile])

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetchJson } from "./apiClient";
 import RoutingSettings from "./RoutingSettings";
+import WebAuthSettings from "./WebAuthSettings";
 
 type BuildVersion = {
   image_tag: string;
@@ -84,6 +85,10 @@ export default function SettingsLauncher() {
               {version?.commit_sha ? ` · ${version.commit_sha}` : ""}
             </p>
             {versionError && <p className="error-text">{versionError}</p>}
+            <div className="modal-section">
+              <h4>Dashboard Access</h4>
+              <WebAuthSettings />
+            </div>
             <div className="modal-section">
               <h4>Tdarr Routing</h4>
               <RoutingSettings />

@@ -79,6 +79,8 @@ TDARR_ALLOWED_HOSTS=tdarr,localhost,127.0.0.1,::1
 
 `WEB_AUTH_PASSWORD` is required and fails closed when blank or left as a sample placeholder. Use a value distinct from `API_AUTH_TOKEN`. Five failed logins from one client within five minutes trigger a 15-minute block. The dashboard uses HTTP Basic authentication, so keep `WEB_BIND_ADDRESS=127.0.0.1` for host-only access. To serve a trusted LAN, set `WEB_BIND_ADDRESS=0.0.0.0`; use an HTTPS reverse proxy before exposing it outside the host. If that proxy gives the browser a different public origin, add it to the comma-separated `WEB_ALLOWED_ORIGINS` value. Set `WEB_TRUST_PROXY=true` only when that proxy overwrites `X-Real-IP` or `X-Forwarded-For`; otherwise clients could spoof the rate-limit key.
 
+The Settings menu includes **Dashboard Access** controls for skipping Basic authentication on explicitly trusted IPv4 or IPv6 CIDRs. This bypass is disabled by default and requires trusting proxy client-IP headers. Enable it only when Traefik or Cloudflare overwrites `CF-Connecting-IP`, `X-Forwarded-For`, or `X-Real-IP`, and prevent untrusted clients from reaching the dashboard port directly. For local clients using a Cloudflare-backed hostname, use split DNS so they reach Traefik locally; otherwise Cloudflare normally presents the client public IP rather than its private LAN address.
+
 Before upgrading an existing installation, add `WEB_AUTH_PASSWORD` and include the hostname from its saved Tdarr URL in `TDARR_ALLOWED_HOSTS`. Missing dashboard credentials return `503`; an unlisted saved Tdarr host leaves the settings file untouched but is treated as unconfigured until the allowlist is corrected.
 
 Set host mounts:

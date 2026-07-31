@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
+- Added Settings controls for bypassing dashboard Basic authentication only for explicitly trusted network CIDRs received through operator-trusted proxy headers.
 - Added dashboard-wide HTTP Basic authentication with failed-login throttling and same-origin checks for state-changing proxy requests.
 - Added an explicit Tdarr hostname allowlist to prevent runtime routing settings from targeting unapproved hosts.
 

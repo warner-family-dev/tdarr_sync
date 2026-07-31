@@ -184,6 +184,16 @@ class RoutingSettingsResponse(BaseModel):
     routes: list[TagFlowRoute] = Field(default_factory=list)
 
 
+class WebAuthSettingsUpdate(BaseModel):
+    enabled: bool = False
+    trust_proxy_headers: bool = False
+    trusted_networks: list[str] = Field(default_factory=list)
+
+
+class WebAuthSettingsResponse(WebAuthSettingsUpdate):
+    pass
+
+
 class BuildVersion(BaseModel):
     image_tag: str
     image_published_date: str

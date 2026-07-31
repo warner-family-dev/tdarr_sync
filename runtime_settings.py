@@ -5,11 +5,13 @@ import logging
 import os
 import re
 import tempfile
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 ALLOWED_SOURCES = {"sonarr", "radarr"}
+MAX_WEB_AUTH_TRUSTED_NETWORKS = 32
 DEFAULT_RUNTIME_SETTINGS_FILE = Path("/data/runtime_settings.json")
 DEFAULT_TDARR_ALLOWED_HOSTS = (
     "tdarr",
@@ -30,6 +32,9 @@ def default_runtime_settings() -> dict[str, Any]:
         "tdarr_server_url": "",
         "tdarr_api_key": "",
         "show_job_error_count": False,
+        "web_auth_bypass_enabled": False,
+        "web_auth_trust_proxy_headers": False,
+        "web_auth_trusted_networks": [],
         "routes": [],
     }
 
@@ -51,6 +56,33 @@ def _normalize_input_subdir(raw_value: Any, flow_name: str) -> str:
             "input_subdir may only include letters, numbers, dot, underscore, and hyphen."
         )
     return value
+
+
+def _normalize_web_auth_trusted_networks(raw_value: Any) -> list[str]:
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise TypeError("web_auth_trusted_networks must be a list.")
+    if len(raw_value) > MAX_WEB_AUTH_TRUSTED_NETWORKS:
+        raise ValueError(
+            f"web_auth_trusted_networks may contain at most {MAX_WEB_AUTH_TRUSTED_NETWORKS} entries."
+        )
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_network in raw_value:
+        value = str(raw_network).strip()
+        if not value or "%" in value:
+            raise ValueError("Trusted networks must be valid IPv4 or IPv6 CIDRs.")
+        try:
+            network = ip_network(value, strict=False)
+        except ValueError as exc:
+            raise ValueError(f"Invalid trusted network CIDR: {value}") from exc
+        canonical = network.with_prefixlen
+        if canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    return normalized
 
 
 def _tdarr_allowed_hosts() -> set[str]:
@@ -113,6 +145,23 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
     )
     tdarr_api_key = str(payload.get("tdarr_api_key", "")).strip()
     show_job_error_count = bool(payload.get("show_job_error_count", False))
+    web_auth_bypass_enabled = bool(
+        payload.get("web_auth_bypass_enabled", False)
+    )
+    web_auth_trust_proxy_headers = bool(
+        payload.get("web_auth_trust_proxy_headers", False)
+    )
+    web_auth_trusted_networks = _normalize_web_auth_trusted_networks(
+        payload.get("web_auth_trusted_networks", [])
+    )
+    if web_auth_bypass_enabled and not web_auth_trust_proxy_headers:
+        raise ValueError(
+            "Trusted-network login bypass requires trusted proxy headers."
+        )
+    if web_auth_bypass_enabled and not web_auth_trusted_networks:
+        raise ValueError(
+            "Trusted-network login bypass requires at least one trusted CIDR."
+        )
 
     routes_raw = payload.get("routes", [])
     if routes_raw is None:
@@ -157,6 +206,9 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
         "tdarr_server_url": tdarr_server_url,
         "tdarr_api_key": tdarr_api_key,
         "show_job_error_count": show_job_error_count,
+        "web_auth_bypass_enabled": web_auth_bypass_enabled,
+        "web_auth_trust_proxy_headers": web_auth_trust_proxy_headers,
+        "web_auth_trusted_networks": web_auth_trusted_networks,
         "routes": normalized_routes,
     }
 

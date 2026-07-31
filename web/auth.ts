@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { requestBypassesWebAuth, trustedProxyClientIp } from "./networkAuth";
 
 const PLACEHOLDER_SECRETS = new Set([
   "change-me",
@@ -57,6 +58,7 @@ function parsedBasicCredentials(request: Request): { username: string; password:
 }
 
 export function authenticateWebRequest(request: Request): WebAuthResult {
+  if (requestBypassesWebAuth(request)) return "authenticated";
   const configured = configuredCredentials();
   if (!configured) return "misconfigured";
 
@@ -69,13 +71,7 @@ export function authenticateWebRequest(request: Request): WebAuthResult {
 }
 
 export function webAuthFailureKey(request: Request): string {
-  if (process.env.WEB_TRUST_PROXY?.trim().toLowerCase() === "true") {
-    const realIp = request.headers.get("x-real-ip")?.trim();
-    if (realIp) return realIp;
-    const forwardedFor = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
-    if (forwardedFor) return forwardedFor;
-  }
-  return "direct-client";
+  return trustedProxyClientIp(request) || "direct-client";
 }
 
 export function webAuthRetryAfter(clientKey: string, now = Date.now()): number | null {

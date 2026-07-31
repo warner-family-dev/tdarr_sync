@@ -113,5 +113,48 @@ class RuntimeSettingsTests(unittest.TestCase):
             self.assertEqual(loaded, saved)
 
 
+    def test_web_auth_bypass_defaults_off(self):
+        payload = normalize_runtime_settings_payload({"routes": []})
+        self.assertFalse(payload["web_auth_bypass_enabled"])
+        self.assertFalse(payload["web_auth_trust_proxy_headers"])
+        self.assertEqual(payload["web_auth_trusted_networks"], [])
+
+    def test_normalizes_web_auth_trusted_networks(self):
+        payload = normalize_runtime_settings_payload(
+            {
+                "web_auth_bypass_enabled": True,
+                "web_auth_trust_proxy_headers": True,
+                "web_auth_trusted_networks": [
+                    "192.168.4.55/24",
+                    "2001:db8::1/64",
+                    "192.168.4.0/24",
+                ],
+                "routes": [],
+            }
+        )
+        self.assertEqual(
+            payload["web_auth_trusted_networks"],
+            ["192.168.4.0/24", "2001:db8::/64"],
+        )
+
+    def test_rejects_unsafe_web_auth_bypass_settings(self):
+        invalid_payloads = (
+            {"web_auth_bypass_enabled": True, "routes": []},
+            {
+                "web_auth_bypass_enabled": True,
+                "web_auth_trust_proxy_headers": True,
+                "routes": [],
+            },
+            {
+                "web_auth_trust_proxy_headers": True,
+                "web_auth_trusted_networks": ["not-a-network"],
+                "routes": [],
+            },
+        )
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                normalize_runtime_settings_payload(payload)
+
+
 if __name__ == "__main__":
     unittest.main()
