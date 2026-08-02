@@ -32,7 +32,9 @@ COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 
 WORKDIR /app
 COPY requirements/base.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir --upgrade pip &&     pip install --no-cache-dir -r /tmp/requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip && \
+    python -m pip install --no-cache-dir -r /tmp/requirements.txt && \
+    python -m pip uninstall --yes pip
 
 COPY . /app
 RUN python -c 'import json,sys; from pathlib import Path; keys=("image_tag","image_published_date","commit_sha","git_version","commit_date"); Path("/app/build-metadata.json").write_text(json.dumps(dict(zip(keys, sys.argv[1:]))) + "\n", encoding="utf-8")' \

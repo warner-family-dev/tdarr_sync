@@ -26,6 +26,7 @@ All notable changes to this project will be documented in this file.
 - Disabled redirects for Tdarr API requests so configured destinations cannot redirect status checks to another host.
 
 ### Security
+- Removed build-only `pip` from the runtime container so its vulnerable vendored `msgpack` and `setuptools` copies are not shipped in the production image.
 - Remediated the production Next.js, PostCSS, and Sharp advisories by pinning fixed releases and verified that the production frontend and Python dependency audits report no known vulnerabilities.
 - Removed the vulnerable legacy ESLint dependency path and verified the replacement frontend lockfile reports no known npm vulnerabilities.
 
