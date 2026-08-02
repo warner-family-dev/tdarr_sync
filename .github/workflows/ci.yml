@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - "dev/**"
 
 permissions:
   contents: read
@@ -28,9 +27,9 @@ jobs:
           cache-dependency-path: requirements/base.txt
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: "20.9.0"
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -68,9 +67,9 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Audit frontend production dependencies
+      - name: Audit all frontend dependencies
         working-directory: web
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=high
 
 
   secret_scan:

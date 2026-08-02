@@ -8,8 +8,27 @@ type RouteSource = "sonarr" | "radarr";
 type TagFlowRoute = {
   source: RouteSource;
   tag: string;
+  tdarr_library_id: string;
+  tdarr_library_name: string;
+  tdarr_flow_id: string;
   flow_name: string;
   input_subdir: string;
+};
+
+type TdarrRoutingTarget = {
+  tdarr_library_id: string;
+  tdarr_library_name: string;
+  tdarr_library_folder: string;
+  tdarr_flow_id: string;
+  flow_name: string;
+  input_subdir: string;
+};
+
+type TdarrRoutingTargetsPayload = {
+  configured: boolean;
+  reachable: boolean;
+  error: string | null;
+  targets: TdarrRoutingTarget[];
 };
 
 type RoutingSettingsPayload = {
@@ -19,13 +38,19 @@ type RoutingSettingsPayload = {
   routes: TagFlowRoute[];
 };
 
-type RoutingSettingsUpdatePayload = Omit<RoutingSettingsPayload, "configured"> & {
+type RoutingSettingsUpdatePayload = {
+  tdarr_server_url: string;
   tdarr_api_key?: string;
+  show_job_error_count: boolean;
+  routes: Array<Pick<TagFlowRoute, "source" | "tag" | "tdarr_library_id">>;
 };
 
 const EMPTY_ROUTE: TagFlowRoute = {
   source: "sonarr",
   tag: "",
+  tdarr_library_id: "",
+  tdarr_library_name: "",
+  tdarr_flow_id: "",
   flow_name: "",
   input_subdir: "",
 };
@@ -44,6 +69,8 @@ export default function RoutingSettings() {
     routes: [],
   });
   const [tdarrApiKey, setTdarrApiKey] = useState("");
+  const [targets, setTargets] = useState<TdarrRoutingTarget[]>([]);
+  const [targetError, setTargetError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +80,10 @@ export default function RoutingSettings() {
     setLoading(true);
     setError(null);
     try {
-      const payload = await apiFetchJson<RoutingSettingsPayload>("/settings/routing", { cache: "no-store" });
+      const [payload, targetPayload] = await Promise.all([
+        apiFetchJson<RoutingSettingsPayload>("/settings/routing", { cache: "no-store" }),
+        apiFetchJson<TdarrRoutingTargetsPayload>("/settings/routing/targets", { cache: "no-store" }),
+      ]);
       setSettings({
         tdarr_server_url: payload.tdarr_server_url ?? "",
         configured: Boolean(payload.configured),
@@ -62,11 +92,16 @@ export default function RoutingSettings() {
           ? payload.routes.map((route) => ({
               source: route.source,
               tag: route.tag ?? "",
+              tdarr_library_id: route.tdarr_library_id ?? "",
+              tdarr_library_name: route.tdarr_library_name ?? "",
+              tdarr_flow_id: route.tdarr_flow_id ?? "",
               flow_name: route.flow_name ?? "",
               input_subdir: route.input_subdir ?? "",
             }))
           : [],
       });
+      setTargets(Array.isArray(targetPayload.targets) ? targetPayload.targets : []);
+      setTargetError(targetPayload.reachable ? null : targetPayload.error ?? "Unable to load Tdarr libraries.");
       setTdarrApiKey("");
     } catch (err) {
       setError(buildErrorMessage(err));
@@ -116,18 +151,25 @@ export default function RoutingSettings() {
     });
   }, []);
 
+  const targetsById = useMemo(
+    () => new Map(targets.map((target) => [target.tdarr_library_id, target])),
+    [targets],
+  );
+
   const canSave = useMemo(() => {
     if (saving || loading) {
       return false;
     }
-    return settings.routes.every((route) => route.tag.trim().length > 0 && route.flow_name.trim().length > 0);
+    return settings.routes.every(
+      (route) => route.tag.trim().length > 0 && route.tdarr_library_id.trim().length > 0,
+    );
   }, [saving, loading, settings.routes]);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!canSave) {
-        setError("Each route needs a tag and flow name.");
+        setError("Each route needs a tag and Tdarr library.");
         return;
       }
 
@@ -141,8 +183,7 @@ export default function RoutingSettings() {
           routes: settings.routes.map((route) => ({
             source: route.source,
             tag: route.tag.trim(),
-            flow_name: route.flow_name.trim(),
-            input_subdir: route.input_subdir.trim(),
+            tdarr_library_id: route.tdarr_library_id.trim(),
           })),
         };
         if (tdarrApiKey.trim()) {
@@ -209,9 +250,11 @@ export default function RoutingSettings() {
       </label>
 
       <p className="muted">
-        Route order matters. The first matching tag per source wins, and files are copied into the configured Tdarr
-        input subfolder.
+        Route order matters. The first matching tag per source wins. Choose a Tdarr library; its linked flow and input
+        folder are loaded directly from Tdarr. Files are grouped as Source/Tdarr-library-folder/title.
       </p>
+
+      {targetError && <p className="error-text">{targetError}</p>}
 
       <div className="routing-list">
         {settings.routes.length === 0 && <p className="muted">No routes configured.</p>}
@@ -232,21 +275,29 @@ export default function RoutingSettings() {
               <input type="text" value={route.tag} onChange={(event) => updateRoute(index, "tag", event.target.value)} />
             </label>
             <label className="form-field compact">
-              <span>Flow name</span>
-              <input
-                type="text"
-                value={route.flow_name}
-                onChange={(event) => updateRoute(index, "flow_name", event.target.value)}
-              />
-            </label>
-            <label className="form-field compact">
-              <span>Input subdir</span>
-              <input
-                type="text"
-                value={route.input_subdir}
-                placeholder="auto-from-flow-name"
-                onChange={(event) => updateRoute(index, "input_subdir", event.target.value)}
-              />
+              <span>Tdarr library / flow</span>
+              <select
+                value={route.tdarr_library_id}
+                onChange={(event) => updateRoute(index, "tdarr_library_id", event.target.value)}
+              >
+                <option value="">Select a Tdarr library</option>
+                {route.tdarr_library_id && !targetsById.has(route.tdarr_library_id) && (
+                  <option value={route.tdarr_library_id}>
+                    {route.tdarr_library_name || "Unavailable Tdarr library"}
+                  </option>
+                )}
+                {targets.map((target) => (
+                  <option key={target.tdarr_library_id} value={target.tdarr_library_id}>
+                    {target.tdarr_library_name} — {target.flow_name}
+                  </option>
+                ))}
+              </select>
+              <span className="muted">
+                Destination: {route.source === "sonarr" ? "Sonarr" : "Radarr"}/
+                {targetsById.get(route.tdarr_library_id)?.input_subdir || route.input_subdir || "…"}
+                {" · Flow: "}
+                {targetsById.get(route.tdarr_library_id)?.flow_name || route.flow_name || "…"}
+              </span>
             </label>
             <div className="routing-actions">
               <button type="button" className="button ghost" onClick={() => moveRoute(index, -1)} disabled={index === 0}>

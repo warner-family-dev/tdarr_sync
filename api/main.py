@@ -26,7 +26,11 @@ from .restore_service import (
 )
 from .settings import settings
 from .sync_runner import SyncAlreadyRunningError, SyncRunner
-from .tdarr_client import fetch_tdarr_status
+from .tdarr_client import (
+    TdarrClient,
+    fetch_tdarr_routing_targets,
+    fetch_tdarr_status,
+)
 
 
 class TZFormatter(logging.Formatter):
@@ -156,10 +160,67 @@ def _routing_settings_response(data: dict) -> schemas.RoutingSettingsResponse:
     )
 
 
+def _web_auth_settings_response(data: dict) -> schemas.WebAuthSettingsResponse:
+    return schemas.WebAuthSettingsResponse(
+        enabled=bool(data.get("web_auth_bypass_enabled", False)),
+        trust_proxy_headers=bool(
+            data.get("web_auth_trust_proxy_headers", False)
+        ),
+        trusted_networks=data.get("web_auth_trusted_networks", []),
+    )
+
+
+def _resolve_routing_targets(body: dict) -> dict:
+    routes = body.get("routes", [])
+    if not routes:
+        return body
+
+    server_url = str(body.get("tdarr_server_url", "")).strip()
+    api_key = str(body.get("tdarr_api_key", "")).strip()
+    if not server_url:
+        raise ValueError("Configure the Tdarr server before adding routes.")
+    try:
+        available = TdarrClient(server_url, api_key).fetch_routing_targets()
+    except Exception as exc:
+        raise ValueError(f"Unable to load Tdarr libraries and flows: {exc}") from exc
+
+    targets_by_id = {target["tdarr_library_id"]: target for target in available}
+    resolved_routes = []
+    for index, route in enumerate(routes):
+        library_id = str(route.get("tdarr_library_id", "")).strip()
+        target = targets_by_id.get(library_id)
+        if target is None:
+            raise ValueError(
+                f"Route #{index + 1} selects a Tdarr library that is unavailable."
+            )
+        resolved_routes.append(
+            {
+                "source": route.get("source", ""),
+                "tag": route.get("tag", ""),
+                "tdarr_library_id": target["tdarr_library_id"],
+                "tdarr_library_name": target["tdarr_library_name"],
+                "tdarr_flow_id": target["tdarr_flow_id"],
+                "flow_name": target["flow_name"],
+                "input_subdir": target["input_subdir"],
+            }
+        )
+    return {**body, "routes": resolved_routes}
+
+
 @app.get("/settings/routing", response_model=schemas.RoutingSettingsResponse)
 def get_routing_settings():
     data = load_runtime_settings(settings.runtime_settings_file)
     return _routing_settings_response(data)
+
+
+@app.get(
+    "/settings/routing/targets",
+    response_model=schemas.TdarrRoutingTargetsResponse,
+)
+def get_routing_targets():
+    return schemas.TdarrRoutingTargetsResponse(
+        **fetch_tdarr_routing_targets(settings.runtime_settings_file)
+    )
 
 
 @app.put("/settings/routing", response_model=schemas.RoutingSettingsResponse)
@@ -167,13 +228,45 @@ def update_routing_settings(payload: schemas.RoutingSettingsUpdate):
     body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     existing = load_runtime_settings(settings.runtime_settings_file)
     submitted_api_key = str(body.get("tdarr_api_key") or "").strip()
+    body = {**existing, **body}
     body["tdarr_api_key"] = submitted_api_key or existing.get("tdarr_api_key", "")
     try:
+        body = _resolve_routing_targets(body)
         saved = save_runtime_settings(body, settings.runtime_settings_file)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info("Updated routing settings (%d routes)", len(saved.get("routes", [])))
     return _routing_settings_response(saved)
+
+
+@app.get("/settings/web-auth", response_model=schemas.WebAuthSettingsResponse)
+def get_web_auth_settings():
+    data = load_runtime_settings(settings.runtime_settings_file)
+    return _web_auth_settings_response(data)
+
+
+@app.put("/settings/web-auth", response_model=schemas.WebAuthSettingsResponse)
+def update_web_auth_settings(payload: schemas.WebAuthSettingsUpdate):
+    body = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    existing = load_runtime_settings(settings.runtime_settings_file)
+    merged = {
+        **existing,
+        "web_auth_bypass_enabled": bool(body.get("enabled", False)),
+        "web_auth_trust_proxy_headers": bool(
+            body.get("trust_proxy_headers", False)
+        ),
+        "web_auth_trusted_networks": body.get("trusted_networks", []),
+    }
+    try:
+        saved = save_runtime_settings(merged, settings.runtime_settings_file)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "Updated web authentication settings (trusted-network bypass: %s, networks: %d)",
+        saved.get("web_auth_bypass_enabled", False),
+        len(saved.get("web_auth_trusted_networks", [])),
+    )
+    return _web_auth_settings_response(saved)
 
 
 @app.get("/processed-files", response_model=list[schemas.ProcessedFile])

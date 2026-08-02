@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import requests
@@ -361,8 +361,15 @@ class TdarrClient:
     def _request_json(self, method: str, path: str, **kwargs) -> Any:
         url = f"{self.server_url}{path}"
         response = requests.request(
-            method, url, headers=self.headers, timeout=self.timeout, **kwargs
+            method,
+            url,
+            headers=self.headers,
+            timeout=self.timeout,
+            allow_redirects=False,
+            **kwargs,
         )
+        if 300 <= response.status_code < 400:
+            raise RuntimeError("Tdarr redirect responses are not allowed.")
         response.raise_for_status()
         if not response.content:
             return {}
@@ -373,6 +380,51 @@ class TdarrClient:
             "POST",
             "/api/v2/cruddb",
             json={"data": {"collection": collection, "mode": "getAll"}},
+        )
+
+    def fetch_routing_targets(self) -> list[dict[str, str]]:
+        flow_records = _records_from_payload(self._fetch_collection("FlowsJSONDB"))
+        library_records = _records_from_payload(
+            self._fetch_collection("LibrarySettingsJSONDB")
+        )
+        flows = {
+            str(record.get("_id") or "").strip(): str(record.get("name") or "").strip()
+            for record in flow_records
+            if str(record.get("_id") or "").strip()
+            and str(record.get("name") or "").strip()
+        }
+
+        targets: list[dict[str, str]] = []
+        for library in library_records:
+            library_id = str(library.get("_id") or "").strip()
+            library_name = str(library.get("name") or "").strip()
+            library_folder = str(library.get("folder") or "").strip()
+            flow_id = str(library.get("flowId") or "").strip()
+            flow_name = flows.get(flow_id, "")
+            normalized_folder = library_folder.replace("\\", "/").rstrip("/")
+            input_subdir = PurePosixPath(normalized_folder).name if normalized_folder else ""
+            if not all(
+                (library_id, library_name, library_folder, flow_id, flow_name, input_subdir)
+            ):
+                continue
+            targets.append(
+                {
+                    "tdarr_library_id": library_id,
+                    "tdarr_library_name": library_name,
+                    "tdarr_library_folder": library_folder,
+                    "tdarr_flow_id": flow_id,
+                    "flow_name": flow_name,
+                    "input_subdir": input_subdir,
+                }
+            )
+
+        return sorted(
+            targets,
+            key=lambda target: (
+                target["tdarr_library_name"].casefold(),
+                target["flow_name"].casefold(),
+                target["tdarr_library_id"],
+            ),
         )
 
     def _fetch_job_error_count(self) -> int | None:
@@ -466,6 +518,35 @@ class TdarrClient:
             "workers": workers,
             "nodes": nodes,
         }
+
+
+def fetch_tdarr_routing_targets(runtime_settings_file: Path) -> dict[str, Any]:
+    settings = load_runtime_settings(runtime_settings_file)
+    server_url = str(settings.get("tdarr_server_url", "")).strip()
+    api_key = str(settings.get("tdarr_api_key", "")).strip()
+    if not server_url:
+        return {
+            "configured": False,
+            "reachable": False,
+            "error": "Tdarr server URL is not configured.",
+            "targets": [],
+        }
+
+    try:
+        targets = TdarrClient(server_url, api_key).fetch_routing_targets()
+    except Exception as exc:  # noqa: BLE001 - discovery boundary
+        return {
+            "configured": True,
+            "reachable": False,
+            "error": f"Tdarr routing target request failed: {exc}",
+            "targets": [],
+        }
+    return {
+        "configured": True,
+        "reachable": True,
+        "error": None,
+        "targets": targets,
+    }
 
 
 def fetch_tdarr_status(runtime_settings_file: Path) -> dict[str, Any]:

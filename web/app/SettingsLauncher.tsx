@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetchJson } from "./apiClient";
 import RoutingSettings from "./RoutingSettings";
+import WebAuthSettings from "./WebAuthSettings";
 
 type BuildVersion = {
   image_tag: string;
@@ -56,8 +57,8 @@ export default function SettingsLauncher() {
     if (!version) {
       return "loading-version";
     }
-    const displayTag = version.image_tag || version.git_version || "unknown";
-    const displayDate = version.image_published_date || version.commit_date || "unknown";
+    const displayTag = version.git_version || version.image_tag || "unknown";
+    const displayDate = version.commit_date || version.image_published_date || "unknown";
     return `${displayTag} (${displayDate})`;
   }, [version]);
 
@@ -84,6 +85,10 @@ export default function SettingsLauncher() {
               {version?.commit_sha ? ` · ${version.commit_sha}` : ""}
             </p>
             {versionError && <p className="error-text">{versionError}</p>}
+            <div className="modal-section">
+              <h4>Dashboard Access</h4>
+              <WebAuthSettings />
+            </div>
             <div className="modal-section">
               <h4>Tdarr Routing</h4>
               <RoutingSettings />

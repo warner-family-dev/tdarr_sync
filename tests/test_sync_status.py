@@ -4,7 +4,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("API_AUTH_TOKEN", "tdarr-sync-test-api-token")
 os.environ.setdefault(
@@ -227,6 +227,25 @@ class SyncStatusApiTests(unittest.TestCase):
 
 
 class TdarrClientTests(unittest.TestCase):
+    def test_tdarr_requests_do_not_follow_redirects(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+        response = Mock(status_code=302, content=b"")
+
+        with (
+            patch("api.tdarr_client.requests.request", return_value=response) as request,
+            self.assertRaisesRegex(RuntimeError, "redirect responses are not allowed"),
+        ):
+            client._request_json("GET", "/api/v2/status")
+
+        request.assert_called_once_with(
+            "GET",
+            "http://tdarr.example/api/v2/status",
+            headers={"x-api-key": "tapi_test"},
+            timeout=4,
+            allow_redirects=False,
+        )
+        response.raise_for_status.assert_not_called()
+
     def test_stats_request_uses_get_all_and_stats_failure_is_nonfatal(self):
         client = TdarrClient("http://tdarr.example", "tapi_test")
         calls = []
@@ -390,6 +409,64 @@ class TdarrClientTests(unittest.TestCase):
         self.assertIsNone(payload["job_error_count"])
         self.assertFalse(payload["show_job_error_count"])
         self.assertNotIn("JobsJSONDB", requested_collections)
+
+
+    def test_routing_targets_join_libraries_to_stable_flow_ids(self):
+        client = TdarrClient("http://tdarr.example", "tapi_test")
+
+        def fake_collection(collection):
+            if collection == "FlowsJSONDB":
+                return [
+                    {"_id": "flow-1080", "name": "1080p"},
+                    {"_id": "flow-720", "name": "720p Cleaned"},
+                ]
+            if collection == "LibrarySettingsJSONDB":
+                return [
+                    {
+                        "_id": "library-720",
+                        "name": "720p",
+                        "folder": "/media/input/720p",
+                        "flowId": "flow-720",
+                    },
+                    {
+                        "_id": "library-1080",
+                        "name": "1080p",
+                        "folder": "/media/input/1080p/",
+                        "flowId": "flow-1080",
+                    },
+                    {
+                        "_id": "unassigned",
+                        "name": "No flow",
+                        "folder": "/media/input/no-flow",
+                        "flowId": "missing",
+                    },
+                ]
+            raise AssertionError(collection)
+
+        with patch.object(client, "_fetch_collection", side_effect=fake_collection):
+            targets = client.fetch_routing_targets()
+
+        self.assertEqual(
+            targets,
+            [
+                {
+                    "tdarr_library_id": "library-1080",
+                    "tdarr_library_name": "1080p",
+                    "tdarr_library_folder": "/media/input/1080p/",
+                    "tdarr_flow_id": "flow-1080",
+                    "flow_name": "1080p",
+                    "input_subdir": "1080p",
+                },
+                {
+                    "tdarr_library_id": "library-720",
+                    "tdarr_library_name": "720p",
+                    "tdarr_library_folder": "/media/input/720p",
+                    "tdarr_flow_id": "flow-720",
+                    "flow_name": "720p Cleaned",
+                    "input_subdir": "720p",
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":

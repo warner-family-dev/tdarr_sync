@@ -31,7 +31,11 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-from runtime_settings import load_runtime_settings, settings_path_from_env
+from runtime_settings import (
+    _normalize_input_subdir,
+    load_runtime_settings,
+    settings_path_from_env,
+)
 from sync_progress import ProgressReporter, progress_path_from_env
 
 # -------------------- ENV --------------------
@@ -40,10 +44,14 @@ load_dotenv()
 try:
     SONARR_URL = os.environ["SONARR_URL"]
     SONARR_API_KEY = os.environ["SONARR_API_KEY"]
-    SONARR_TAG_NAME = os.environ.get("SONARR_TAG_NAME", "")
+    SONARR_INPUT_FOLDER = _normalize_input_subdir(
+        os.environ.get("SONARR_INPUT_FOLDER", "Sonarr"), "Sonarr"
+    )
     RADARR_URL = os.environ.get("RADARR_URL", "")
     RADARR_API_KEY = os.environ.get("RADARR_API_KEY", "")
-    RADARR_TAG_NAME = os.environ.get("RADARR_TAG_NAME", "")
+    RADARR_INPUT_FOLDER = _normalize_input_subdir(
+        os.environ.get("RADARR_INPUT_FOLDER", "Radarr"), "Radarr"
+    )
 
     BASE_DIR = Path(os.environ["BASE_DIR"]).resolve()
     TDARR_INPUT_DIR = Path(os.environ["TDARR_INPUT_DIR"]).resolve()
@@ -101,13 +109,17 @@ try:
     ).resolve()
     RUNTIME_SETTINGS_FILE = settings_path_from_env().resolve()
     SYNC_PROGRESS_FILE = progress_path_from_env().resolve()
-except KeyError as e:
+except (KeyError, ValueError) as e:
     print(f"Missing required environment variable: {e}")
     raise SystemExit(1)
 
 SOURCE_PREFIXES = {
     "sonarr": "__sonarr_input__",
     "radarr": "__radarr_input__",
+}
+SOURCE_INPUT_FOLDERS = {
+    "sonarr": SONARR_INPUT_FOLDER,
+    "radarr": RADARR_INPUT_FOLDER,
 }
 # Temporary route-tag block list. Any matching routes are ignored for copy + restore handling.
 TEMP_DISABLED_ROUTE_TAGS = {"remux"}
@@ -227,9 +239,17 @@ def _arr_get(
     base_url: str, api_key: str, endpoint: str, params: dict | None = None
 ) -> requests.Response:
     query = dict(params or {})
-    query["apikey"] = api_key
     url = base_url.rstrip("/") + "/api/v3" + endpoint
-    response = requests.get(url, params=query, timeout=20)
+    headers = {"X-Api-Key": api_key}
+    response = requests.get(
+        url,
+        params=query,
+        headers=headers,
+        timeout=20,
+        allow_redirects=False,
+    )
+    if 300 <= response.status_code < 400:
+        raise RuntimeError("ARR redirect responses are not allowed.")
     response.raise_for_status()
     return response
 
@@ -366,15 +386,10 @@ def _disabled_route_input_subdirs(runtime_settings: dict[str, object]) -> set[st
 
 
 def _route_input_root(route: dict[str, str], source: str) -> Path:
-    parts = [TDARR_INPUT_DIR]
-    input_subdir = route.get("input_subdir", "").strip()
-    if input_subdir:
-        parts.append(Path(input_subdir))
-    parts.append(Path(SOURCE_PREFIXES[source]))
-    dest = Path(parts[0])
-    for segment in parts[1:]:
-        dest = dest.joinpath(segment)
-    return dest
+    flow_subdir = _normalize_input_subdir(
+        route.get("input_subdir"), route.get("flow_name", "")
+    )
+    return TDARR_INPUT_DIR.joinpath(SOURCE_INPUT_FOLDERS[source], flow_subdir)
 
 
 def build_relative_path(full_path: Path, base_dir: Path) -> Path:
@@ -548,41 +563,11 @@ def load_effective_routes() -> tuple[dict[str, object], list[dict[str, str]], bo
         )
         return runtime_settings, enabled_routes, False
 
-    # Legacy fallback keeps existing behaviour if UI rules have not been configured yet.
-    fallback_routes: list[dict[str, str]] = []
-    if SONARR_TAG_NAME:
-        fallback_routes.append(
-            {
-                "source": "sonarr",
-                "tag": SONARR_TAG_NAME,
-                "flow_name": "legacy-sonarr",
-                "input_subdir": "",
-            }
-        )
-    if RADARR_URL and RADARR_API_KEY and RADARR_TAG_NAME:
-        fallback_routes.append(
-            {
-                "source": "radarr",
-                "tag": RADARR_TAG_NAME,
-                "flow_name": "legacy-radarr",
-                "input_subdir": "",
-            }
-        )
-    enabled_fallback, disabled_fallback = _partition_routes_by_disabled_tag(
-        fallback_routes
+    logger.warning(
+        "No routes configured in %s. Configure source tags and Tdarr libraries in Settings.",
+        RUNTIME_SETTINGS_FILE,
     )
-    _log_disabled_routes(disabled_fallback, scope="legacy")
-    if enabled_fallback:
-        logger.info(
-            "No UI routes configured in %s; using %d legacy env-based route(s).",
-            RUNTIME_SETTINGS_FILE,
-            len(enabled_fallback),
-        )
-    elif disabled_fallback:
-        logger.warning("No active legacy routes after temporary tag suppression.")
-    else:
-        logger.warning("No routes configured in runtime settings or environment.")
-    return runtime_settings, enabled_fallback, True
+    return runtime_settings, [], False
 
 
 def _group_routes_by_source(
@@ -735,7 +720,6 @@ def _copy_sonarr_items(
     *,
     dry_run: bool,
     selection: dict[int, set[int] | None] | None,
-    legacy_mode: bool,
 ) -> None:
     _progress_begin("copy_sonarr", action="loading_routes")
     if not routes:
@@ -791,10 +775,7 @@ def _copy_sonarr_items(
         if route is None:
             continue
 
-        if legacy_mode:
-            destination_root = TDARR_INPUT_DIR
-        else:
-            destination_root = _route_input_root(route, "sonarr")
+        destination_root = _route_input_root(route, "sonarr")
 
         logger.info(
             "SONARR: %s (id=%s) -> flow='%s' tag='%s' dest='%s'",
@@ -964,7 +945,6 @@ def _copy_radarr_items(
     routes: list[dict[str, str]],
     *,
     dry_run: bool,
-    legacy_mode: bool,
 ) -> None:
     _progress_begin("copy_radarr", action="loading_routes")
     if not routes:
@@ -1014,10 +994,7 @@ def _copy_radarr_items(
             continue
 
         src = translate_radarr_path(path)
-        if legacy_mode:
-            destination_root = TDARR_INPUT_DIR.joinpath(SOURCE_PREFIXES["radarr"])
-        else:
-            destination_root = _route_input_root(route, "radarr")
+        destination_root = _route_input_root(route, "radarr")
 
         logger.info(
             "RADARR: %s -> flow='%s' tag='%s' dest='%s'",
@@ -1140,7 +1117,7 @@ def process_media_to_tdarr(
     dry_run=False, selection: dict[int, set[int] | None] | None = None
 ):
     _progress_begin("copy_sonarr", action="loading_routes")
-    _, routes, legacy_mode = load_effective_routes()
+    _, routes, _ = load_effective_routes()
     if not routes:
         logger.info("No route rules resolved. Nothing to copy into Tdarr input.")
         _progress_total(0, action="skipped", message="No route rules resolved.")
@@ -1154,11 +1131,8 @@ def process_media_to_tdarr(
             grouped_routes["sonarr"],
             dry_run=dry_run,
             selection=selection,
-            legacy_mode=legacy_mode,
         )
-        _copy_radarr_items(
-            conn, grouped_routes["radarr"], dry_run=dry_run, legacy_mode=legacy_mode
-        )
+        _copy_radarr_items(conn, grouped_routes["radarr"], dry_run=dry_run)
     finally:
         conn.close()
 
@@ -1173,8 +1147,14 @@ def _resolve_restore_destination(
         if route.get("input_subdir")
     }
     parts = rel_path.parts
+    source_folder_to_source = {
+        folder: source for source, folder in SOURCE_INPUT_FOLDERS.items()
+    }
 
-    if len(parts) >= 2 and parts[0] in flow_subdirs and parts[1] in prefix_to_source:
+    if len(parts) >= 3 and parts[0] in source_folder_to_source:
+        source = source_folder_to_source[parts[0]]
+        relative_to_library = Path(*parts[2:])
+    elif len(parts) >= 2 and parts[0] in flow_subdirs and parts[1] in prefix_to_source:
         source = prefix_to_source[parts[1]]
         relative_to_library = Path(*parts[2:]) if len(parts) > 2 else Path()
     elif len(parts) >= 1 and parts[0] in prefix_to_source:
@@ -1220,10 +1200,19 @@ def move_tdarr_output_back(dry_run=False):
                 action="skipped_outside_output", path=out_path, skipped=True
             )
             continue
+        disabled_flow = None
         if rel.parts and rel.parts[0] in disabled_input_subdirs:
+            disabled_flow = rel.parts[0]
+        elif (
+            len(rel.parts) >= 2
+            and rel.parts[0] in SOURCE_INPUT_FOLDERS.values()
+            and rel.parts[1] in disabled_input_subdirs
+        ):
+            disabled_flow = rel.parts[1]
+        if disabled_flow:
             logger.info(
                 "RESTORE: skip output under disabled-tag subdir %s: %s",
-                rel.parts[0],
+                disabled_flow,
                 out_path,
             )
             _progress_advance(

@@ -636,12 +636,18 @@ tbody tr:nth-child(even) {
   font-size: 0.9rem;
 }
 
-.form-field input {
+.form-field input,
+.form-field textarea {
   background: #10131a;
   border: 1px solid #1f2430;
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
   color: #f5f7fb;
+}
+
+.form-field textarea {
+  resize: vertical;
+  font: inherit;
 }
 
 .form-field select {
@@ -652,7 +658,8 @@ tbody tr:nth-child(even) {
   color: #f5f7fb;
 }
 
-.form-field input:focus {
+.form-field input:focus,
+.form-field textarea:focus {
   outline: none;
   border-color: #3dd68c;
   box-shadow: 0 0 0 2px rgba(61, 214, 140, 0.15);

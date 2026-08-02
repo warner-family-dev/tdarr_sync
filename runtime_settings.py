@@ -5,10 +5,13 @@ import logging
 import os
 import re
 import tempfile
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ALLOWED_SOURCES = {"sonarr", "radarr"}
+MAX_WEB_AUTH_TRUSTED_NETWORKS = 32
 DEFAULT_RUNTIME_SETTINGS_FILE = Path("/data/runtime_settings.json")
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 logger = logging.getLogger(__name__)
@@ -23,6 +26,9 @@ def default_runtime_settings() -> dict[str, Any]:
         "tdarr_server_url": "",
         "tdarr_api_key": "",
         "show_job_error_count": False,
+        "web_auth_bypass_enabled": False,
+        "web_auth_trust_proxy_headers": False,
+        "web_auth_trusted_networks": [],
         "routes": [],
     }
 
@@ -46,13 +52,89 @@ def _normalize_input_subdir(raw_value: Any, flow_name: str) -> str:
     return value
 
 
+def _normalize_web_auth_trusted_networks(raw_value: Any) -> list[str]:
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise TypeError("web_auth_trusted_networks must be a list.")
+    if len(raw_value) > MAX_WEB_AUTH_TRUSTED_NETWORKS:
+        raise ValueError(
+            f"web_auth_trusted_networks may contain at most {MAX_WEB_AUTH_TRUSTED_NETWORKS} entries."
+        )
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_network in raw_value:
+        value = str(raw_network).strip()
+        if not value or "%" in value:
+            raise ValueError("Trusted networks must be valid IPv4 or IPv6 CIDRs.")
+        try:
+            network = ip_network(value, strict=False)
+        except ValueError as exc:
+            raise ValueError(f"Invalid trusted network CIDR: {value}") from exc
+        canonical = network.with_prefixlen
+        if canonical not in seen:
+            normalized.append(canonical)
+            seen.add(canonical)
+    return normalized
+
+
+
+def _normalize_tdarr_server_url(raw_value: Any) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return ""
+    if any(character.isspace() for character in value):
+        raise ValueError("tdarr_server_url must not contain whitespace.")
+
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("tdarr_server_url is not a valid URL.") from exc
+
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        raise ValueError("tdarr_server_url must use http or https.")
+    if not parsed.netloc or not hostname:
+        raise ValueError("tdarr_server_url must include a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("tdarr_server_url must not include credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("tdarr_server_url must not include a query or fragment.")
+
+    if port == 0:
+        raise ValueError("tdarr_server_url must use a valid non-zero port.")
+
+    return value.rstrip("/")
+
+
 def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise TypeError("Settings payload must be an object.")
 
-    tdarr_server_url = str(payload.get("tdarr_server_url", "")).strip()
+    tdarr_server_url = _normalize_tdarr_server_url(
+        payload.get("tdarr_server_url", "")
+    )
     tdarr_api_key = str(payload.get("tdarr_api_key", "")).strip()
     show_job_error_count = bool(payload.get("show_job_error_count", False))
+    web_auth_bypass_enabled = bool(
+        payload.get("web_auth_bypass_enabled", False)
+    )
+    web_auth_trust_proxy_headers = bool(
+        payload.get("web_auth_trust_proxy_headers", False)
+    )
+    web_auth_trusted_networks = _normalize_web_auth_trusted_networks(
+        payload.get("web_auth_trusted_networks", [])
+    )
+    if web_auth_bypass_enabled and not web_auth_trust_proxy_headers:
+        raise ValueError(
+            "Trusted-network login bypass requires trusted proxy headers."
+        )
+    if web_auth_bypass_enabled and not web_auth_trusted_networks:
+        raise ValueError(
+            "Trusted-network login bypass requires at least one trusted CIDR."
+        )
 
     routes_raw = payload.get("routes", [])
     if routes_raw is None:
@@ -74,9 +156,23 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
         if not tag:
             raise ValueError(f"Route #{idx + 1} requires a tag.")
 
+        tdarr_library_id = str(route.get("tdarr_library_id", "")).strip()
+        tdarr_library_name = str(route.get("tdarr_library_name", "")).strip()
+        tdarr_flow_id = str(route.get("tdarr_flow_id", "")).strip()
         flow_name = str(route.get("flow_name", "")).strip()
-        if not flow_name:
-            raise ValueError(f"Route #{idx + 1} requires a flow_name.")
+        if tdarr_library_id:
+            if not tdarr_library_name:
+                raise ValueError(
+                    f"Route #{idx + 1} requires a server-resolved Tdarr library name."
+                )
+            if not tdarr_flow_id or not flow_name:
+                raise ValueError(
+                    f"Route #{idx + 1} requires a server-resolved Tdarr flow."
+                )
+        elif not flow_name:
+            raise ValueError(
+                f"Route #{idx + 1} requires a Tdarr library selection."
+            )
 
         dedupe_key = (source, tag.lower())
         if dedupe_key in seen:
@@ -88,6 +184,9 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
             {
                 "source": source,
                 "tag": tag,
+                "tdarr_library_id": tdarr_library_id,
+                "tdarr_library_name": tdarr_library_name,
+                "tdarr_flow_id": tdarr_flow_id,
                 "flow_name": flow_name,
                 "input_subdir": input_subdir,
             }
@@ -97,6 +196,9 @@ def normalize_runtime_settings_payload(payload: dict[str, Any]) -> dict[str, Any
         "tdarr_server_url": tdarr_server_url,
         "tdarr_api_key": tdarr_api_key,
         "show_job_error_count": show_job_error_count,
+        "web_auth_bypass_enabled": web_auth_bypass_enabled,
+        "web_auth_trust_proxy_headers": web_auth_trust_proxy_headers,
+        "web_auth_trusted_networks": web_auth_trusted_networks,
         "routes": normalized_routes,
     }
 

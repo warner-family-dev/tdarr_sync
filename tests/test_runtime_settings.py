@@ -32,6 +32,40 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(payload["routes"][0]["input_subdir"], "reality-tv-to-720p")
         self.assertTrue(payload["show_job_error_count"])
 
+    def test_normalize_bound_tdarr_library_route(self):
+        payload = normalize_runtime_settings_payload(
+            {
+                "routes": [
+                    {
+                        "source": "sonarr",
+                        "tag": "transcode",
+                        "tdarr_library_id": "library-720",
+                        "tdarr_library_name": "720p",
+                        "tdarr_flow_id": "flow-clean",
+                        "flow_name": "720p Cleaned",
+                        "input_subdir": "720p",
+                    }
+                ]
+            }
+        )
+        self.assertEqual(payload["routes"][0]["tdarr_library_id"], "library-720")
+        self.assertEqual(payload["routes"][0]["flow_name"], "720p Cleaned")
+        self.assertEqual(payload["routes"][0]["input_subdir"], "720p")
+
+    def test_rejects_incomplete_bound_tdarr_library_route(self):
+        with self.assertRaisesRegex(ValueError, "server-resolved Tdarr"):
+            normalize_runtime_settings_payload(
+                {
+                    "routes": [
+                        {
+                            "source": "sonarr",
+                            "tag": "transcode",
+                            "tdarr_library_id": "library-720",
+                        }
+                    ]
+                }
+            )
+
     def test_rejects_duplicate_source_tag(self):
         with self.assertRaises(ValueError):
             normalize_runtime_settings_payload(
@@ -58,6 +92,29 @@ class RuntimeSettingsTests(unittest.TestCase):
                 }
             )
 
+    def test_accepts_tdarr_host_configured_in_settings(self):
+        payload = normalize_runtime_settings_payload(
+            {"tdarr_server_url": "https://tdarr.example.test", "routes": []}
+        )
+        self.assertEqual(payload["tdarr_server_url"], "https://tdarr.example.test")
+
+    def test_rejects_tdarr_url_with_unsafe_scheme_or_credentials(self):
+        for url in (
+            "file:///etc/passwd",
+            "http://user:password@tdarr.local:8266",
+            "http://tdarr.local:8266/?redirect=http://metadata.internal",
+        ):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                normalize_runtime_settings_payload(
+                    {"tdarr_server_url": url, "routes": []}
+                )
+
+    def test_accepts_tdarr_url_with_explicit_port(self):
+        payload = normalize_runtime_settings_payload(
+            {"tdarr_server_url": "http://tdarr.local:8266/", "routes": []}
+        )
+        self.assertEqual(payload["tdarr_server_url"], "http://tdarr.local:8266")
+
     def test_save_and_load_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             settings_file = Path(tmp_dir) / "runtime_settings.json"
@@ -79,6 +136,49 @@ class RuntimeSettingsTests(unittest.TestCase):
             )
             loaded = load_runtime_settings(settings_file)
             self.assertEqual(loaded, saved)
+
+
+    def test_web_auth_bypass_defaults_off(self):
+        payload = normalize_runtime_settings_payload({"routes": []})
+        self.assertFalse(payload["web_auth_bypass_enabled"])
+        self.assertFalse(payload["web_auth_trust_proxy_headers"])
+        self.assertEqual(payload["web_auth_trusted_networks"], [])
+
+    def test_normalizes_web_auth_trusted_networks(self):
+        payload = normalize_runtime_settings_payload(
+            {
+                "web_auth_bypass_enabled": True,
+                "web_auth_trust_proxy_headers": True,
+                "web_auth_trusted_networks": [
+                    "192.168.4.55/24",
+                    "2001:db8::1/64",
+                    "192.168.4.0/24",
+                ],
+                "routes": [],
+            }
+        )
+        self.assertEqual(
+            payload["web_auth_trusted_networks"],
+            ["192.168.4.0/24", "2001:db8::/64"],
+        )
+
+    def test_rejects_unsafe_web_auth_bypass_settings(self):
+        invalid_payloads = (
+            {"web_auth_bypass_enabled": True, "routes": []},
+            {
+                "web_auth_bypass_enabled": True,
+                "web_auth_trust_proxy_headers": True,
+                "routes": [],
+            },
+            {
+                "web_auth_trust_proxy_headers": True,
+                "web_auth_trusted_networks": ["not-a-network"],
+                "routes": [],
+            },
+        )
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                normalize_runtime_settings_payload(payload)
 
 
 if __name__ == "__main__":

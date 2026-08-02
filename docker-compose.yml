@@ -1,6 +1,6 @@
 services:
   tdarr-sync:
-    image: ghcr.io/warner-family-dev/tdarr_sync:${IMAGE_TAG:-latest}
+    image: ghcr.io/warner-family-dev/tdarr_sync:latest
     # Uncomment to force a platform, for example on a 64-bit Raspberry Pi:
     # platform: ${DOCKER_PLATFORM:-linux/arm64}
     env_file:
@@ -9,7 +9,6 @@ services:
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
-      IMAGE_TAG: ${IMAGE_TAG:-latest}
       STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
       RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}
       SYNC_PROGRESS_FILE: ${SYNC_PROGRESS_FILE:-/config/sync_progress.json}
@@ -25,7 +24,7 @@ services:
       - ${TDARR_SYNC_DATA_DIR:-./data}:/data
       - ${TDARR_SYNC_LOG_DIR:-./logs}:/logs
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
       - "127.0.0.1:${API_PORT:-8000}:8000"
     healthcheck:
       test:
@@ -40,7 +39,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ghcr.io/warner-family-dev/tdarr_sync:${IMAGE_TAG:-latest}
+    image: ghcr.io/warner-family-dev/tdarr_sync:latest
     profiles:
       - manual
     env_file:
@@ -49,7 +48,6 @@ services:
       TZ: ${TZ}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
-      IMAGE_TAG: ${IMAGE_TAG:-latest}
       SERVICE_MODE: worker
       STATE_DB_FILE: ${STATE_DB_FILE:-/config/sonarr_tdarr_state.db}
       RUNTIME_SETTINGS_FILE: ${RUNTIME_SETTINGS_FILE:-/config/runtime_settings.json}

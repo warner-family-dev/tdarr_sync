@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -11,47 +12,55 @@ from api.build_version import (
 
 
 class BuildVersionResolverTests(unittest.TestCase):
-    def test_runtime_image_tag_overrides_baked_image_tag(self):
+    def test_immutable_metadata_ignores_runtime_version_environment(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            (repo_root / "build-metadata.json").write_text(
+                json.dumps(
+                    {
+                        "image_tag": "latest",
+                        "image_published_date": "2026-07-31",
+                        "git_version": "dev/v2.3.8",
+                        "commit_date": "2026-07-30",
+                        "commit_sha": "abcdef1",
+                    }
+                ),
+                encoding="utf-8",
+            )
             env = {
-                "IMAGE_TAG": "latest",
-                "APP_IMAGE_TAG": "v2.3.4",
-                "APP_IMAGE_PUBLISHED_DATE": "2026-07-07",
-                "APP_IMAGE_REVISION": "abcdef1",
-                "APP_GIT_VERSION": "",
-                "APP_GIT_COMMIT_DATE": "",
-                "APP_GIT_COMMIT_SHA": "",
+                "IMAGE_TAG": "user-selected-tag",
+                "APP_IMAGE_TAG": "another-user-selected-tag",
+                "APP_GIT_VERSION": "wrong-branch",
             }
             with patch.dict("os.environ", env, clear=False):
-                resolved = resolve_build_version(Path(tmp_dir))
+                resolved = resolve_build_version(repo_root)
 
         self.assertEqual(resolved["image_tag"], "latest")
-        self.assertEqual(resolved["image_published_date"], "2026-07-07")
-        self.assertEqual(resolved["git_version"], "latest")
-        self.assertEqual(resolved["commit_date"], "2026-07-07")
+        self.assertEqual(resolved["image_published_date"], "2026-07-31")
+        self.assertEqual(resolved["git_version"], "v2.3.8")
+        self.assertEqual(resolved["commit_date"], "2026-07-30")
         self.assertEqual(resolved["commit_sha"], "abcdef1")
         self.assertEqual(resolved["source"], "image")
 
-    def test_baked_image_tag_is_used_without_runtime_image_tag(self):
+    def test_main_branch_metadata_displays_main(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            env = {
-                "IMAGE_TAG": "",
-                "APP_IMAGE_TAG": "v2.3.4",
-                "APP_IMAGE_PUBLISHED_DATE": "2026-07-02",
-                "APP_IMAGE_REVISION": "1234567",
-                "APP_GIT_VERSION": "",
-                "APP_GIT_COMMIT_DATE": "",
-                "APP_GIT_COMMIT_SHA": "",
-            }
-            with patch.dict("os.environ", env, clear=False):
-                resolved = resolve_build_version(Path(tmp_dir))
+            repo_root = Path(tmp_dir)
+            (repo_root / "build-metadata.json").write_text(
+                json.dumps(
+                    {
+                        "image_tag": "latest",
+                        "image_published_date": "2026-07-31",
+                        "git_version": "refs/heads/main",
+                        "commit_date": "2026-07-30",
+                        "commit_sha": "1234567",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            resolved = resolve_build_version(repo_root)
 
-        self.assertEqual(resolved["image_tag"], "v2.3.4")
-        self.assertEqual(resolved["image_published_date"], "2026-07-02")
-        self.assertEqual(resolved["git_version"], "v2.3.4")
-        self.assertEqual(resolved["commit_date"], "2026-07-02")
-        self.assertEqual(resolved["commit_sha"], "1234567")
-        self.assertEqual(resolved["source"], "image")
+        self.assertEqual(resolved["git_version"], "main")
+        self.assertEqual(resolved["commit_date"], "2026-07-30")
 
     def test_reads_branch_sha_and_commit_date_from_git_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -78,7 +87,7 @@ class BuildVersionResolverTests(unittest.TestCase):
             expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
                 "%Y-%m-%d"
             )
-            self.assertEqual(resolved["git_version"], "dev/v1.1.3")
+            self.assertEqual(resolved["git_version"], "v1.1.3")
             self.assertEqual(resolved["commit_date"], expected_date)
             self.assertEqual(resolved["commit_sha"], full_sha[:7])
             self.assertEqual(resolved["source"], "git")

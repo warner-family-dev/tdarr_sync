@@ -113,20 +113,8 @@ export default function RestoreOriginalsControl() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RestoreResponse | null>(null);
-  const [requestId, setRequestId] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<RestoreJobStatus | null>(null);
-  useEffect(() => {
-    try {
-      if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-        setRequestId(crypto.randomUUID());
-      } else {
-        setRequestId(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      }
-    } catch {
-      setRequestId(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    }
-  }, []);
 
   const loadSeries = useCallback(async () => {
     setSeriesLoading(true);
@@ -331,10 +319,11 @@ export default function RestoreOriginalsControl() {
           if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
             return crypto.randomUUID();
           }
-        } catch {}
+        } catch {
+          // Fall through to the non-cryptographic correlation ID.
+        }
         return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       })();
-      setRequestId(correlationId);
       const response = await apiFetchJson<RestoreResponse | RestoreTriggerResponse>("/restore/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

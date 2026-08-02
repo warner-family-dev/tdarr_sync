@@ -67,11 +67,19 @@ Set these first:
 TZ=America/Chicago
 PUID=1000
 PGID=1000
-IMAGE_TAG=latest
 API_AUTH_TOKEN=replace-with-a-long-random-token
+WEB_AUTH_USERNAME=admin
+WEB_AUTH_PASSWORD=replace-with-a-different-long-random-password
+WEB_BIND_ADDRESS=127.0.0.1
 ```
 
-`IMAGE_TAG` controls both the image pulled by Compose and the version label shown in the dashboard. For example, `IMAGE_TAG=latest` displays `latest (<image-publish-date>)`, while `IMAGE_TAG=v2.3.4` displays `v2.3.4 (<image-publish-date>)`.
+The dashboard version label is generated from immutable build metadata. Builds from `main` display `main`, while development branches such as `dev/v2.3.8` display `v2.3.8`; it cannot be selected through `.env`.
+
+`WEB_AUTH_PASSWORD` is required and fails closed when blank or left as a sample placeholder. Use a value distinct from `API_AUTH_TOKEN`. Five failed logins from one client within five minutes trigger a 15-minute block. The dashboard uses HTTP Basic authentication, so keep `WEB_BIND_ADDRESS=127.0.0.1` for host-only access. To serve a trusted LAN, set `WEB_BIND_ADDRESS=0.0.0.0`; use an HTTPS reverse proxy before exposing it outside the host. If that proxy gives the browser a different public origin, add it to the comma-separated `WEB_ALLOWED_ORIGINS` value. Set `WEB_TRUST_PROXY=true` only when that proxy overwrites `X-Real-IP` or `X-Forwarded-For`; otherwise clients could spoof the rate-limit key.
+
+The Settings menu includes **Dashboard Access** controls for skipping Basic authentication on explicitly trusted IPv4 or IPv6 CIDRs. This bypass is disabled by default and requires trusting proxy client-IP headers. Enable it only when Traefik or Cloudflare overwrites `CF-Connecting-IP`, `X-Forwarded-For`, or `X-Real-IP`, and prevent untrusted clients from reaching the dashboard port directly. For local clients using a Cloudflare-backed hostname, use split DNS so they reach Traefik locally; otherwise Cloudflare normally presents the client public IP rather than its private LAN address.
+
+Before upgrading an existing installation, add `WEB_AUTH_PASSWORD`. Missing dashboard credentials return `503`.
 
 Set host mounts:
 
@@ -125,7 +133,7 @@ If Sonarr reports files under `/tv` but the container sees the same files under 
 docker compose up -d
 ```
 
-Open the dashboard:
+Open the dashboard and sign in with `WEB_AUTH_USERNAME` and `WEB_AUTH_PASSWORD` when prompted:
 
 ```text
 http://localhost:3000
@@ -147,7 +155,7 @@ Authorization: Bearer <API_AUTH_TOKEN>
 
 Tdarr Sync needs Tdarr API access for queue and worker status in the dashboard.
 
-In Tdarr, enable API key authentication, copy the API key, then enter it in the Tdarr Sync dashboard settings.
+In Tdarr, enable API key authentication, copy the API key, then enter its URL and key in the Tdarr Sync dashboard settings. Only `http` and `https` URLs without embedded credentials, queries, fragments, whitespace, or malformed ports are accepted.
 
 ### 5. Configure Routing In The Dashboard
 
@@ -159,10 +167,9 @@ Open **Settings** in the Tdarr Sync dashboard and configure:
 | Tdarr API key | Stored server-side only; it is not returned to the browser after save. |
 | Source | `sonarr` or `radarr`. |
 | Tag | The Sonarr/Radarr tag that selects files for this route. |
-| Flow name | Human-readable flow label. Used to derive the input subfolder when `Input subdir` is blank. |
-| Input subdir | Single safe folder name under `TDARR_INPUT_DIR`. |
+| Tdarr library / flow | Selects a live Tdarr library by stable ID. The linked flow and library-folder name are loaded from Tdarr and cannot be typed manually. |
 
-Route order matters. The first matching tag for a source wins.
+Route order matters. The first matching tag for a source wins. The source folder names come from `SONARR_INPUT_FOLDER` and `RADARR_INPUT_FOLDER`. Route tags, library IDs, linked flow IDs, and server-resolved display names are stored in runtime settings; `.env` flow-name fallbacks are not used. If no routes are configured, the sync safely copies nothing.
 
 Current sources are `sonarr` and `radarr`. To support another source, the application would need a new source adapter, route source validation, copy logic, restore path resolution, and dashboard/API schema updates.
 
@@ -173,15 +180,15 @@ The tag `remux` is temporarily blocked by the sync pipeline. Any route using tha
 Tdarr Sync copies files into this structure:
 
 ```text
-<TDARR_INPUT_DIR>/<input_subdir>/__sonarr_input__/<relative-library-path>
-<TDARR_INPUT_DIR>/<input_subdir>/__radarr_input__/<relative-library-path>
+<TDARR_INPUT_DIR>/<SONARR_INPUT_FOLDER>/<tdarr-library-folder>/<relative-library-path>
+<TDARR_INPUT_DIR>/<RADARR_INPUT_FOLDER>/<tdarr-library-folder>/<relative-library-path>
 ```
 
 Example:
 
 ```text
-/media/tdarr/input/hevc-main/__sonarr_input__/Show/Season 01/Episode.mkv
-/media/tdarr/input/movie-hevc/__radarr_input__/Movie (2024)/Movie.mkv
+/media/tdarr/input/Sonarr/720p/Show/Season 01/Episode.mkv
+/media/tdarr/input/Radarr/1080p/Movie (2024)/Movie.mkv
 ```
 
 Configure Tdarr so the matching input folders are watched and completed files are written to `TDARR_OUTPUT_DIR` with the same relative path structure. Restore depends on that relative path to decide whether the output belongs back in the Sonarr or Radarr library.
@@ -245,7 +252,7 @@ docker buildx build --platform linux/amd64 --load -f Dockerfile -t tdarr-sync:lo
 ### Copy Phase
 
 - Loads UI routes from `/config/runtime_settings.json`.
-- Falls back to `SONARR_TAG_NAME` and `RADARR_TAG_NAME` only when no UI routes exist.
+- Uses only the source tags and stable Tdarr library IDs configured in Settings; if no routes exist, copies nothing.
 - Reads Sonarr/Radarr items and tags through their APIs.
 - Copies matching files into Tdarr input subfolders.
 - Leaves source files untouched during copy.
@@ -389,7 +396,7 @@ Current frontend stack:
 
 - Next.js 16
 - React 19
-- ESLint 9
+- ESLint 10
 - TypeScript 6
 
 ## Troubleshooting
@@ -397,6 +404,8 @@ Current frontend stack:
 | Symptom | Check |
 | --- | --- |
 | API will not start | `API_AUTH_TOKEN` must be set to a non-placeholder value. |
+| Dashboard returns 503 | Set a non-placeholder `WEB_AUTH_PASSWORD`; the username defaults to `admin`. |
+| Tdarr URL is rejected | Use a valid `http` or `https` URL without embedded credentials, queries, fragments, whitespace, or a malformed port. |
 | No files copied | Confirm routes exist, source tags exist, and the tag is not `remux`. |
 | Sonarr/Radarr files not found | Fix `SONARR_BASE_PATH`/`LOCAL_MOUNT_BASE_PATH` or `RADARR_BASE_PATH`/`RADARR_LOCAL_MOUNT_BASE_PATH`. |
 | Tdarr outputs do not restore | Confirm Tdarr writes completed files under `TDARR_OUTPUT_DIR` with the same relative path copied into input. |
@@ -408,6 +417,6 @@ Current frontend stack:
 
 - Do not commit `.env` or runtime data files.
 - Rotate any credential that was ever committed or pasted into public logs.
-- Keep `API_AUTH_TOKEN`, Sonarr/Radarr API keys, Tdarr API key, Telegram token, and restore password private.
-- The Compose file binds the API to `127.0.0.1` by default. Put the dashboard behind TLS/auth if exposing it beyond a trusted LAN.
+- Keep `API_AUTH_TOKEN`, `WEB_AUTH_PASSWORD`, Sonarr/Radarr API keys, Tdarr API key, Telegram token, and restore password private.
+- Compose binds both the API and dashboard to `127.0.0.1` by default. Dashboard Basic authentication is also required; use TLS whenever credentials cross a network.
 - Keep `API_CORS_ALLOW_ALL=false` unless you have a specific reason to expose the API cross-origin.
