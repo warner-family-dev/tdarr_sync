@@ -6,6 +6,7 @@ ARG S6_OVERLAY_VERSION=3.2.1.0
 FROM node:${NODE_VERSION}-bookworm-slim AS web-deps
 WORKDIR /build/web
 COPY web/package*.json ./
+COPY web/vendor ./vendor
 RUN npm ci
 
 FROM web-deps AS web-builder

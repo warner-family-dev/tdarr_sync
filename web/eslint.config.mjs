@@ -34,5 +34,5 @@ export default defineConfig([
       },
     },
   },
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  globalIgnores(["vendor/picomatch/**", ".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);

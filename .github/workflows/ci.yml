@@ -59,6 +59,10 @@ jobs:
           bandit -q -ll -ii -r
           api services tdarr_sync.py runtime_settings.py sync_progress.py
 
+      - name: Verify matcher security patch
+        working-directory: web
+        run: node --test tests/glob-security.test.mjs
+
       - name: Frontend lint
         working-directory: web
         run: npm run lint
@@ -69,7 +73,7 @@ jobs:
 
       - name: Audit all frontend dependencies
         working-directory: web
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=low
 
 
   secret_scan:

@@ -10,23 +10,26 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "next": "16.2.12",
+    "next": "16.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@next/eslint-plugin-next": "16.2.12",
+    "@next/eslint-plugin-next": "16.4.6",
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "10.8.0",
     "eslint-plugin-react-hooks": "7.1.1",
+    "picomatch": "file:vendor/picomatch",
     "typescript": "6.0.3",
     "typescript-eslint": "8.65.0"
   },
   "overrides": {
-    "postcss": "8.5.23",
-    "sharp": "0.35.3"
+    "postcss": "8.5.33",
+    "sharp": "0.35.5",
+    "minimatch": "11.0.9",
+    "picomatch": "$picomatch"
   }
 }
