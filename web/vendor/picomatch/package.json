@@ -1,0 +1,11 @@
+{
+  "name": "@tdarr-sync/picomatch",
+  "version": "4.0.7",
+  "private": true,
+  "description": "Local security backport for Tdarr_Sync lint tooling",
+  "license": "MIT",
+  "main": "index.js",
+  "engines": {
+    "node": ">=12"
+  }
+}

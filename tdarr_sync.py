@@ -24,7 +24,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -207,7 +207,7 @@ def _fmt_ts(epoch: int | None) -> str:
     if not epoch:
         return "-"
     return (
-        datetime.fromtimestamp(epoch, tz=timezone.utc)
+        datetime.fromtimestamp(epoch, tz=UTC)
         .astimezone()
         .strftime("%Y-%m-%d %H:%M:%S")
     )

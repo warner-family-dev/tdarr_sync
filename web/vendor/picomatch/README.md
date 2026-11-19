@@ -1,0 +1,1 @@
+Derived from the MIT-licensed picomatch 4.0.7 npm distribution. The sole source change rejects repeated extglobs before regex compilation. This development-only override covers both glob consumers until upstream ships a release fixing GHSA-fc5q-39xc-vjpf. Test lint and remove this copy and its Docker COPY instruction when upgrading.

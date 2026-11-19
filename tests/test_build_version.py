@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -84,7 +84,7 @@ class BuildVersionResolverTests(unittest.TestCase):
             )
 
             resolved = _resolve_build_version_from_git_files(repo_root)
-            expected_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime(
+            expected_date = datetime.fromtimestamp(ts, tz=UTC).strftime(
                 "%Y-%m-%d"
             )
             self.assertEqual(resolved["git_version"], "v1.1.3")
@@ -117,7 +117,7 @@ class BuildVersionResolverTests(unittest.TestCase):
             self.assertEqual(resolved["commit_sha"], full_sha[:7])
             self.assertEqual(
                 resolved["commit_date"],
-                datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d"),
+                datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%d"),
             )
 
 
