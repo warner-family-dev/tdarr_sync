@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 BUILD_METADATA_FILE = "build-metadata.json"
@@ -102,7 +102,7 @@ def _read_commit_date_from_git_log(git_dir: Path) -> str:
     except ValueError:
         return ""
 
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d")
+    return datetime.fromtimestamp(timestamp, tz=UTC).strftime("%Y-%m-%d")
 
 
 def _resolve_build_version_from_git_files(repo_root: Path) -> dict | None:

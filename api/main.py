@@ -3,7 +3,7 @@ import os
 import secrets
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging.handlers import WatchedFileHandler
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -127,7 +127,7 @@ else:
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 @app.get("/health")

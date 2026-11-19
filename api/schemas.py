@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -332,4 +332,4 @@ def to_iso(timestamp: int | None, tz) -> str | None:
     try:
         return datetime.fromtimestamp(timestamp, tz=tz).isoformat()
     except (OSError, OverflowError, TypeError, ValueError):
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(timestamp, tz=UTC).isoformat()
