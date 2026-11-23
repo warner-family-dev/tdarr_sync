@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Added dashboard-wide HTTP Basic authentication with failed-login throttling and same-origin checks for state-changing proxy requests.
 
 ### Changed
+- Disabled routine Dependabot version update PRs for Python, npm, GitHub Actions, and Docker. Dependabot security updates retain their separate limit.
 - Patched dashboard and lint dependencies, including Next.js image optimization and cache handling. Restricted repeated extglobs in the development-only matcher pending an upstream security release.
 - Moved route tags and Tdarr destinations entirely into Settings, removing guessed `.env` tag/flow fallbacks and making an empty route list safely copy nothing.
 - Organized Tdarr input files as configurable `Sonarr` or `Radarr` source folders, followed by the route flow folder and original library-relative path.
